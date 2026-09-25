@@ -1,0 +1,18 @@
+{
+  "format": "gepa-template-v2",
+  "name": "Política JEV de elección (ejemplo)",
+  "description": "Plantilla de ejemplo de GEPA: una política JEV elige una opción para cada solicitud y se compara con la opción esperada. Adáptala a tu política.",
+  "version": 1,
+  "artifactType": "jev-policy",
+  "adapter": {"name": "jev-choice", "version": "1"},
+  "executor": null,
+  "evaluator": null,
+  "cases": {
+    "guide": "Cada caso trae 'input', el texto que recibe el decisor, y 'expected', el id de la opción de la política que corresponde. Reúne casos de todas las opciones, sobre todo de las que hoy se confunden entre sí, y casos que ya se deciden bien, para protegerlos. Los casos de una política JEV no llevan comprobaciones: no hay nada que marcar como obligatorio."
+  },
+  "presentation": {
+    "metricLabel": "Solicitudes con la opción correcta",
+    "submetrics": {"validOutput": "Respuesta con el formato del decisor"},
+    "notes": ["Un caso puntúa 0 si la opción difiere de la esperada o si la respuesta no cumple el formato del decisor."]
+  }
+}

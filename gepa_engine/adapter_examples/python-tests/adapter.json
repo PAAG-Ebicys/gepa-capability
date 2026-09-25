@@ -1,0 +1,36 @@
+{
+  "format": "gepa-adapter-v1",
+  "name": "python-tests",
+  "version": "1",
+  "artifact": "skill",
+  "description": "Una Skill guía a un modelo para escribir una función de Python; cada caso se puntúa ejecutando pruebas sobre el código que escribe.",
+  "input": {
+    "description": "'input' es el enunciado de la función que hay que escribir en solution.py. 'expected' solo lo lee el evaluador: {\"function\": \"<nombre>\", \"tests\": [{\"name\": \"<prueba>\", \"args\": [<argumentos>], \"equals\": <valor esperado>, \"required\": false}]}.",
+    "evaluatorFields": ["expected"]
+  },
+  "resources": {
+    "description": "La Skill en skill/ (solo para leer) y harness.py, del adaptador, que importa solution.py en un subproceso y devuelve lo que retorna la función con los argumentos de cada prueba.",
+    "files": ["harness.py"]
+  },
+  "tools": [],
+  "environment": {
+    "description": "Una llamada al modelo ejecutor por caso. Su código se guarda en solution.py y se ejecuta con el Python del motor en un subproceso con límite de tiempo, dentro de una carpeta nueva y sin variables de credenciales.",
+    "network": true,
+    "codeExecution": true,
+    "isolation": "Subproceso con límite de tiempo y carpeta propia; no aísla la red ni el resto del sistema de archivos. Los valores esperados nunca llegan a ese subproceso."
+  },
+  "output": {
+    "description": "El contenido de solution.py que escribió el modelo."
+  },
+  "evaluation": {
+    "name": "python-tests",
+    "version": "1",
+    "primaryMetric": "testPassRate",
+    "description": "Llama a la función de solution.py con los argumentos de cada prueba del caso y compara lo que devuelve con 'equals' (mismo valor y mismo tipo JSON). Cada prueba es una submétrica.",
+    "rule": "0 si falla una prueba con 'required': true; si no, pruebas superadas / pruebas del caso."
+  },
+  "roles": {
+    "executor": {"maxTokens": 2048, "purpose": "Escribe solution.py siguiendo la Skill."}
+  },
+  "requirements": []
+}

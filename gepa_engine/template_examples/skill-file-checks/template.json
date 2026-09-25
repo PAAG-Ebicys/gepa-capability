@@ -1,0 +1,18 @@
+{
+  "format": "gepa-template-v2",
+  "name": "Skill que escribe archivos (ejemplo)",
+  "description": "Plantilla de ejemplo de GEPA: una Skill lee los archivos de cada caso, escribe su resultado y se comprueba el archivo que produjo. Adáptala a tu Skill.",
+  "version": 1,
+  "artifactType": "skill",
+  "adapter": {"name": "skill-session", "version": "1"},
+  "executor": {"maxTurns": 8, "maxTokensPerTurn": 4096},
+  "evaluator": {"name": "file-checks"},
+  "cases": {
+    "guide": "Cada caso trae 'input' con 'prompt' (la tarea, con las palabras de quien usa la Skill) y 'files' (los archivos de entrada), y 'expected', la lista de comprobaciones sobre la respuesta o los archivos producidos: file-exists, file-equals, file-contains, file-json-equals, answer-contains. Reúne casos de lo que hoy falla y de lo que debe seguir bien. Marca con \"required\": true la comprobación de lo esencial de la tarea, lo que la persona no aceptaría ver compensado por el resto: el archivo que pide la tarea (file-exists) y su contenido exacto cuando otro programa lo lee tal cual (file-equals). Sin la marca, un archivo equivocado casi aprueba, porque el motor añade a cada caso 'finished' (la sesión terminó). Deja sin marcar las comprobaciones de un aspecto que el resto puede compensar, como una frase de la respuesta final."
+  },
+  "presentation": {
+    "metricLabel": "Casos con los archivos correctos",
+    "submetrics": {"finished": "La sesión terminó con su respuesta final"},
+    "notes": ["Un caso con una comprobación obligatoria incumplida puntúa 0 aunque el resto se cumpla."]
+  }
+}

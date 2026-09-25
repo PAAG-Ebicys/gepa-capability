@@ -1,0 +1,36 @@
+{
+  "format": "gepa-adapter-v1",
+  "name": "choice-costs",
+  "version": "1",
+  "artifact": "jev-policy",
+  "description": "Un decisor elige una opción de la política JEV por caso; cada error cuesta según una matriz de costes, porque no todos los errores son igual de graves.",
+  "input": {
+    "description": "'input' es el estado del caso que el decisor clasifica (texto u objeto JSON). 'expected' solo lo lee el evaluador: el id de la opción correcta.",
+    "evaluatorFields": ["expected"]
+  },
+  "resources": {
+    "description": "La política candidata (policy.json en el espacio aislado) y costs.json, del adaptador: el crédito de elegir cada opción cuando la correcta es otra.",
+    "files": ["costs.json"]
+  },
+  "tools": [],
+  "environment": {
+    "description": "Una llamada al modelo ejecutor por caso con las instrucciones y los criterios de la política candidata y el estado del caso.",
+    "network": false,
+    "codeExecution": false,
+    "isolation": "No ejecuta código: solo llama al modelo mediante el motor."
+  },
+  "output": {
+    "description": "La opción que eligió el decisor o, si su respuesta no cumple el contrato {\"choice\": \"<id>\"}, esa respuesta."
+  },
+  "evaluation": {
+    "name": "choice-costs",
+    "version": "1",
+    "primaryMetric": "costWeightedAccuracy",
+    "description": "1 si el decisor elige la opción esperada; si elige otra, el crédito que costs.json da a ese par (0 si no lo incluye); 0 si la respuesta no cumple el contrato. 'exact' y 'validOutput' son submétricas.",
+    "rule": "Crédito del par (esperada, elegida): 1 si coinciden; si no, el valor de costs.json o 0."
+  },
+  "roles": {
+    "executor": {"maxTokens": 256, "purpose": "Decide la opción de cada caso con la política candidata."}
+  },
+  "requirements": []
+}

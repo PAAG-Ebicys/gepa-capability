@@ -1,0 +1,4 @@
+{
+  "alarm_query": {"alarm_set": 0.5},
+  "alarm_set": {"alarm_query": 0.5}
+}

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gepa-capability"
+version = "0.1.0"
+description = "Capacidad GEPA instalable: motor local, CLI y servidor MCP para optimizar skills y políticas JEV desde un agente anfitrión."
+readme = "docs/install.md"
+requires-python = ">=3.12"
+dependencies = ["gepa==0.1.4", "httpx>=0.28,<1", "openpyxl>=3.1,<4"]
+
+[project.scripts]
+gepa = "gepa_engine.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gepa_engine*"]
+
+[tool.setuptools.package-data]
+gepa_engine = ["skills/*/SKILL.md", "skills/*/*.md", "adapter_examples/*/*.json", "adapter_examples/*/*.py", "template_examples/*/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: lanza procesos reales del sistema (más lento; sin modelos externos)"]
+
+[tool.mypy]
+exclude = ["gepa_engine/adapter_examples/"]  # each example adapter is loaded from its own folder, not imported as a module: check each one on its own
