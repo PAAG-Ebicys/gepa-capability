@@ -232,11 +232,13 @@ def _observed(job: Mapping[str, Any], evidence: _Evidence, history: Iterable[Map
 def _completeness(job: Mapping[str, Any], evidence: _Evidence) -> dict[str, Any]:
     finalists = evidence.selection["finalistIds"] if evidence.selection else []
     tests = [evidence.measures[identifier]["test"]["status"] for identifier in finalists]
-    final = "not-run" if not tests or all(status == "not-evaluated" for status in tests) else "complete" if all(status == "complete" for status in tests) else "partial"
+    skipped = (evidence.result.get("finalCheck") or {}).get("status") == "skipped"
+    final = "skipped" if skipped else "not-run" if not tests or all(status == "not-evaluated" for status in tests) else "complete" if all(status == "complete" for status in tests) else "partial"
     validated = all(evidence.measures[identifier]["validation"]["status"] == "complete" for identifier in finalists)
-    complete = job["status"] == "completed" and final == "complete" and validated
+    complete = job["status"] == "completed" and validated and (final == "complete" or (skipped and bool(evidence.selection) and evidence.selection["selectedIsOriginal"]))
     reason = evidence.result.get("stopReason") or (job.get("error") or {}).get("code") or job["status"]
-    message = ("Evaluación completa: el original y los finalistas tienen validación y prueba reservada sobre todos sus casos." if complete else
+    message = ("Búsqueda completa: se conservó el original por validación y no se abrió la prueba reservada." if complete and skipped else
+               "Evaluación completa: el original y los finalistas tienen validación y prueba reservada sobre todos sus casos." if complete else
                f"Evaluación incompleta (trabajo {job['status']}, motivo {reason}; prueba reservada: {final}): "
                "los resultados parciales no reciben porcentaje ni ganador.")
     return {"status": "complete" if complete else "incomplete", "jobStatus": job["status"], "phase": job.get("phase"), "finalCheck": final,
@@ -252,10 +254,11 @@ def _recommendation(evidence: _Evidence, complete: bool, observed: Mapping[str, 
     def keep(reason: str, message: str) -> dict[str, Any]:
         return {"action": "keep-original", "candidateId": None, "reason": reason, "message": "Conservar el original: " + message}
 
+    if complete and evidence.selection and evidence.selection["selectedIsOriginal"]:
+        suffix = " La prueba reservada no se abrió." if (evidence.result.get("finalCheck") or {}).get("status") == "skipped" else ""
+        return keep("original-selected", f"ningún candidato superó al original en la validación (criterio aprobado: {evidence.selection['rule']}).{suffix}")
     if not complete or evidence.selection is None:
         return keep("incomplete", "la evaluación no está completa, así que ningún candidato demuestra una mejora. Las variantes siguen disponibles para inspeccionarlas.")
-    if evidence.selection["selectedIsOriginal"]:
-        return keep("original-selected", f"ningún candidato superó al original en la validación (criterio aprobado: {evidence.selection['rule']}).")
     selected_id, baseline_id = evidence.selection["selectedId"], evidence.baseline_id
     label = evidence.candidates[selected_id]["label"]
     selected, original = evidence.measures[selected_id], evidence.measures[baseline_id]
@@ -294,6 +297,8 @@ def template_label(template: Mapping[str, Any]) -> str:
 def _limits(evidence: _Evidence, scope: str, completeness: Mapping[str, Any], observed: Mapping[str, Any], cost: Any,
             presentation: Mapping[str, Any] | None) -> list[str]:
     limits = [scope, "La validación sirvió para elegir al seleccionado: su puntuación no es independiente. La prueba reservada es la comprobación independiente."]
+    if completeness["finalCheck"] == "skipped":
+        limits.append("La prueba reservada permaneció sin observar porque la validación conservó el original; este trabajo no demuestra una mejora en test.")
     if presentation is not None:
         limits.append(f"La presentación sigue la plantilla {template_label(presentation['template'])}: solo nombra y explica. "
                       "Los números, la selección y la recomendación salen de la evidencia de este trabajo, no de trabajos anteriores de la plantilla.")

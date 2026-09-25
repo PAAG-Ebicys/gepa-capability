@@ -70,7 +70,10 @@ vería qué hiciste.
      cumplieron todos sus requisitos obligatorios y `taskAccuracy` los que
      cumplieron todas sus comprobaciones (en `null`, el evaluador no la tiene).
    - `counts`. Distingue casos únicos (`cases`, los denominadores), evaluaciones,
-     llamadas por modelo, iteraciones y `internalChecks`. Las comprobaciones
+     llamadas por modelo, iteraciones de GEPA y `internalChecks`.
+     Distingue también propuestas generadas, descartadas tras la muestra de
+     entrenamiento y candidatas con validación completa: una iteración no
+     equivale a un finalista. Las comprobaciones
      internas ocurren dentro de un caso y no son casos nuevos.
    - `costUsd`: si es `null`, el coste es desconocido, no cero.
    - `testObservedBefore`: qué trabajos anteriores ya habían evaluado esos casos
@@ -93,8 +96,11 @@ vería qué hiciste.
      mismos casos.
    - `candidates[].vsOriginal.test` da los `better` y `worse`: los id de los casos
      donde cada candidato mejora o empeora frente al original.
-   - La validación sirvió para elegir; la prueba reservada es la comprobación
-     independiente.
+   - La validación sirvió para elegir. La prueba reservada comprueba la mejora
+     seleccionada solo si un candidato con validación completa superó al
+     original. Si se conservó el original y `completeness.finalCheck` es `skipped`,
+     explica que el test sigue sin observarse; no lo presentes como resultado
+     nulo ni como prueba de igualdad.
 4. **Presentar la recomendación** con `recommendation.message` como mensaje
    principal. Su `reason` es uno de estos:
 
@@ -102,7 +108,7 @@ vería qué hiciste.
    | --- | --- | --- |
    | `improved` | `adopt-candidate` | El seleccionado supera al original en validación y en una prueba reservada completa que no se había observado antes. |
    | `incomplete` | `keep-original` | Falta evidencia: no hay porcentaje ni ganador. |
-   | `original-selected` | `keep-original` | Ningún candidato superó al original en validación. |
+   | `original-selected` | `keep-original` | Ningún candidato superó al original en validación; se omitió la prueba reservada. |
    | `no-test-improvement` | `keep-original` | El seleccionado ganó en validación, pero no en la prueba reservada. |
    | `test-previously-observed` | `keep-original` | La mejora aparece en una prueba ya observada: no es evidencia independiente nueva. |
 

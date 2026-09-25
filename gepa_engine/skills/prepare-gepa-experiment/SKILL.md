@@ -2,7 +2,7 @@
 name: prepare-gepa-experiment
 description: Prepara y aprueba los casos de un experimento GEPA para una política de decisión JEV o una Skill. Úsala cuando la persona quiera armar o revisar un dataset de optimización, aporte ejemplos conversados, pegados de Excel o en archivos Excel, CSV o JSON, quiera definir cómo se puntúa (comprobaciones o rúbrica con juez), la tarea necesite un adaptador propio (ejecutar código, un navegador o una API), quiera repetir una clase de prueba con una plantilla guardada o guardar una, o necesite aprobar una versión antes de optimizar.
 license: MIT
-compatibility: Requiere el motor comprobado con setup-gepa. MCP es opcional; la CLI `gepa` da el mismo resultado.
+compatibility: Requiere el motor instalado y comprobado con setup-gepa. MCP es opcional; la CLI `gepa` da el mismo resultado.
 metadata:
   version: "0.1.0"
   engine: "gepa==0.1.4"
@@ -24,7 +24,7 @@ lo abrevia en la tabla).
 | Acción | Tool MCP | CLI |
 | --- | --- | --- |
 | Preparar | `gepa_dataset_prepare {requestPath}` | `gepa dataset prepare <prepare.json> --json` |
-| Previsualizar el original | `gepa_dataset_preview {draftId, sample?, judge?}` | `gepa dataset preview <draftId> [--sample N] [--judge <conexión>] --json` |
+| Previsualizar el original | `gepa_dataset_preview {draftId, sample?, decider?, judge?}` | `gepa dataset preview <draftId> [--sample N] [--decider <conexión>] [--judge <conexión>] --json` |
 | Ver resumen o casos | `gepa_dataset_show {datasetId, cases?}` | `gepa dataset show <id> [--cases] --json` |
 | Aprobar | `gepa_dataset_approve {draftId, reviewedAllCases?}` | `gepa dataset approve <draftId> [--reviewed-all] --json` |
 
@@ -99,8 +99,10 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
 
 ## Procedimiento
 
-1. **Comprobar el entorno** con `gepa_setup_check` o `gepa setup check --json`.
-   Listo cuando `ready` es `true`; si no, sigue setup-gepa.
+1. **Comprobar el motor** con `gepa_setup_check` o `gepa setup check --json`.
+   Resuelve los errores que impiden preparar; un rol global pendiente puede
+   elegirse después para la previsualización. Listo cuando el motor puede
+   preparar el borrador y conoces qué conexión requiere la previsualización.
 2. **Acordar objetivo y original.** Pregunta qué decisión o tarea falla hoy y qué
    debe proteger. Después busca plantillas para ese tipo de original
    (`gepa_template_list {artifact}` o `gepa template list --artifact <tipo> --json`)
@@ -135,7 +137,12 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
    su programa. Listo cuando la persona confirma que el problema, los casos y
    la forma de ejecutarlos y puntuarlos están alineados; un cambio vuelve al
    paso 3 o 4, y rechazar la plantilla lleva a preparar sin ella.
-6. **Previsualizar el original.** Muestra por caso `input`, `expected`,
+6. **Previsualizar el original.** Elige con la persona una conexión para el
+   decisor/ejecutor y, solo si el evaluador consulta un juez, para ese
+   juez; comprueba su respuesta con setup-gepa. Indica el ejecutor con
+   `decider`/`--decider` y el juez con `judge`/`--judge`, o usa los roles
+   globales disponibles; esa elección no establece por sí sola el modelo de
+   reflexión de la futura búsqueda. Muestra por caso `input`, `expected`,
    `output`, `score`, `submetrics` y `feedback`; en una Skill o con un
    adaptador propio, también lo que indica «Qué revisar con la persona» en
    [skill-cases.md](skill-cases.md) o en [new-adapter.md](new-adapter.md). Pregunta si cada score coincide con
@@ -154,6 +161,15 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
    con el mismo original. Si la persona quiere repetir esta clase de prueba más
    adelante, ofrece guardarla como plantilla: «Guardar una plantilla» en
    [templates.md](templates.md).
+9. **Anotar preferencias para la corrida** si la persona quiere decidirlas ya:
+   pregunta por un tiempo máximo y, opcionalmente, una meta de puntuación en
+   validación, o si prefiere decidir ambas al optimizar. En clasificación con
+   exactitud, presenta la meta como porcentaje y número mínimo de aciertos;
+   con rúbricas o métricas propias, usa el nombre y la escala de la métrica
+   principal. Incluye las preferencias elegidas en la entrega del dataset
+   aprobado para recuperarlas al optimizar. Estas preferencias viajan al paso de
+   optimización: no son campos de `prepare.json`, no alteran el dataset sellado
+   y se concretan como límites de `trabajo.json` antes de iniciar el trabajo.
 
 ## Comprobaciones obligatorias
 

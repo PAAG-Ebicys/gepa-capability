@@ -7,8 +7,8 @@ when the process ends for any reason (closed, killed, the computer restarted): a
 writes a running job's record, because it rewrites the record whole; a cancellation is a separate small
 record, tied to the attempt, that the runner reads before each model call and each case.
 
-Each run of a job is an attempt. The first runs the search and the reserved test; a retry of a job whose
-selection was frozen evaluates only the reserved test cases still pending, without GEPA, and a retry of a search
+Each run of a job is an attempt. The first runs the search and, if a validated candidate wins, the reserved test; a retry of a job whose
+selection was frozen evaluates only the reserved test cases still pending, if needed, without GEPA, and a retry of a search
 cut short either closes with the candidates validated so far or continues GEPA from the state it last saved.
 Every attempt keeps what it spent per phase, so the search limit never hides the cost of the reserved test or of
 its retries.
@@ -33,7 +33,7 @@ INTERRUPTED_MESSAGE = ("El proceso del trabajo terminó sin cerrarlo (se cerró,
                        "lo ocurrido después del último guardado (al menos el caso en curso) no quedó registrado: las llamadas de este intento y "
                        "sus evaluaciones de la prueba reservada son un mínimo, y el uso y el coste pasan a desconocidos. Las evaluaciones de búsqueda "
                        "sí constan todas, también la que estaba en curso, porque se anotan antes de empezar cada caso.")
-NORMAL_SEARCH_ENDS = ("completed", "budget", "max_proposals")  # a search that ended by its own limits, not cut short
+NORMAL_SEARCH_ENDS = ("completed", "budget", "max_proposals", "validation_target")  # a search that ended by its own limits, not cut short
 
 
 def now() -> str:
@@ -144,8 +144,8 @@ def search_spend(store: Storage, job_id: str) -> int:
 
 
 def new_attempt(number: int, kind: str, requested_at: str) -> dict[str, Any]:
-    """An attempt waiting for its runner: ``run`` executes the whole job, ``final-retry`` only the pending reserved test cases, and
-    ``continue-search`` a search cut short from GEPA's last saved state, then the reserved test."""
+    """An attempt waiting for its runner: ``run`` executes the whole job, ``final-retry`` closes a frozen selection and any pending
+    reserved test cases, and ``continue-search`` resumes a cut-short search from GEPA's saved state before applying the selection rule."""
     return {"attempt": number, "kind": kind, "status": "queued", "phase": None, "requestedAt": requested_at, "startedAt": None, "finishedAt": None,
             "stopReason": None, "error": None, "phases": {}}
 
@@ -242,6 +242,10 @@ def consumption(job: Mapping[str, Any]) -> dict[str, Any]:
     if final:
         final_check = (job.get("result") or {}).get("finalCheck") or {}
         final.update(required=final_check.get("required"), resolved=final_check.get("resolved"))
+    elif ((job.get("result") or {}).get("finalCheck") or {}).get("status") == "skipped":
+        phases["final"] = {"evaluations": 0, "attempts": 0, "modelCalls": {}, "usage": dict.fromkeys(USAGE_KEYS, 0),
+                           "costUsd": None, "seconds": 0.0, "required": 0, "resolved": 0}
+        final = phases["final"]
     return {"search": search, "final": final, "attempts": len(job.get("attempts", [])), "timeLimitMinutes": limits["timeLimitMinutes"],
             "countsLowerBound": any(attempt.get("countsLowerBound") for attempt in job.get("attempts", [])),
             "note": "Cada intento tiene su propio límite de tiempo y, en la prueba reservada, como máximo una evaluación por caso pendiente al empezar; "
@@ -293,8 +297,8 @@ def recovery(job: Mapping[str, Any]) -> dict[str, Any] | None:
             resume = (f"Continuar la búsqueda desde el último estado que guardó GEPA (al empezar la iteración {saved['iterations'] + 1}, "
                       f"{saved['savedAt']}), como después de una pausa: no repite las iteraciones completas, y lo hecho después de ese estado se "
                       f"repite y cuenta como gasto nuevo. El presupuesto es del trabajo y no se reinicia: van {saved['iterations']} de "
-                      f"{limits['maxProposals']} iteraciones y {spent} de {limits['maxMetricCalls']} evaluaciones; el tiempo es de cada intento. "
-                      "Al terminar la búsqueda se congela la selección y se evalúa la prueba reservada.")
+                      f"{limits['maxProposals']} iteraciones de búsqueda y {spent} de {limits['maxMetricCalls']} evaluaciones; el tiempo es de cada intento. "
+                      "Al terminar la búsqueda se congela la selección; la prueba reservada se evalúa solo si gana una mejora validada.")
             return {"retryable": True, "kind": None, "code": None, "cli": None, "tool": None,
                     "message": f"La búsqueda se detuvo antes de terminar (motivo {reason}). Pregunta a la persona cuál de las dos recuperaciones "
                                "quiere: continuar la búsqueda desde el último estado guardado de GEPA, o cerrar con los candidatos ya validados. "

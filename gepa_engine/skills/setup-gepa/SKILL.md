@@ -70,20 +70,24 @@ GEPA guardan ahí también sus solicitudes al motor.
    | `provider-unreachable` | No responde el servidor de modelos | Arrancar el servidor local o corregir la URL con `gepa setup connection add ... --url` |
    | `model-missing` | El modelo no está en el catálogo | Elegir uno de los listados en `nextStep` |
    | `inference-failed` | El modelo aparece en el catálogo pero no respondió a una ejecución pequeña | Cargar el modelo o revisar el endpoint de chat según `nextStep` |
-   | `role-unassigned` / `role-dangling` | Un rol (executor, reflection, judge) no apunta a una conexión válida | `gepa setup role <rol> <id-conexión>` |
-   | `no-connections` | Aún no hay conexiones | Preguntar qué modelos quiere usar y añadirlos |
+   | `role-unassigned` / `role-dangling` | Un rol global no apunta a una conexión válida | Si la operación actual requiere ese rol, asignarlo con `gepa setup role <rol> <id-conexión>` o indicar la conexión en esa operación; los demás roles pueden quedar pendientes |
+   | `no-connections` | Aún no hay conexiones | Preparar las que requiera la próxima operación cuando se elijan sus modelos |
    | `folders-undesignated` | Las carpetas de plantillas y de adaptadores propios nunca se designaron (aviso: no bloquea) | Designarlas en el paso 4 con `gepa setup folders` |
 
-3. **Configurar lo que falte** con la persona, mostrando cada cambio antes de
-   aplicarlo:
+3. **Configurar las conexiones necesarias para la operación actual.** Pregunta
+   qué modelo quiere para cada rol que esa operación usa: `executor`/`decider`
+   ejecuta los casos, `reflection` propone cambios durante la búsqueda y
+   `judge` puntúa solo si el evaluador lo requiere. Se puede dejar pendiente la
+   elección de modelos hasta previsualizar o iniciar un trabajo. Una conexión
+   puede asignarse como rol global o indicarse en la operación concreta; muestra
+   cada cambio antes de aplicarlo. Ejemplos con identificadores elegidos por la
+   persona:
 
    ```bash
    gepa setup init --data-dir <ruta>            # opcional; por defecto GEPA_HOME/data
-   gepa setup connection add --id local --provider local --url http://127.0.0.1:1234/v1 --model <modelo>
-   gepa setup connection add --id router --provider openrouter --model <org/modelo> --api-key-env OPENROUTER_API_KEY
-   gepa setup role executor local
-   gepa setup role reflection router
-   gepa setup role judge router
+   gepa setup connection add --id <id-local> --provider local --url <url> --model <modelo>
+   gepa setup connection add --id <id-remoto> --provider openrouter --model <org/modelo> --api-key-env <VARIABLE>
+   gepa setup role <rol-necesario> <id-conexión>
    ```
 
 4. **Designar las carpetas del proyecto** donde van las plantillas de
@@ -99,11 +103,12 @@ GEPA guardan ahí también sus solicitudes al motor.
    copias para compartir (`<nombre>.compartir/`). Una carpeta fuera del
    proyecto no recibe regla. Dile qué reglas añadió (`gitignore.added`). Listo
    cuando `folders.designated` es `true` en `gepa setup show`.
-5. **Repetir `gepa setup check`** hasta que `ready` sea `true` (código de salida 0).
-   `ok: true` con `ready: false` significa que el motor está instalado pero falta
-   asignar los tres roles a conexiones que respondan. Los avisos (`warning`) no
-   bloquean; explícalos y sigue.
-6. **Resumir** a la persona: qué quedó listo, qué modelos usará cada rol, dónde
+5. **Repetir `gepa setup check`** después de los cambios. El diagnóstico global
+   puede mostrar `ready: false` por roles que la operación actual no necesita:
+   informa cuáles están pendientes y comprueba los roles requeridos al
+   previsualizar o iniciar el trabajo. Los avisos (`warning`) no bloquean;
+   explícalos y sigue.
+6. **Resumir** a la persona: qué quedó listo, qué modelos elegidos usará cada rol, dónde
    se guardan los datos y cuáles son las carpetas de plantillas y de
    adaptadores. No incluyas credenciales ni valores de variables de entorno en
    el resumen.
