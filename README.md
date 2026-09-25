@@ -1,97 +1,63 @@
-# Capacidad GEPA
+# GEPA Capability
 
-Optimiza Skills y políticas de decisión JEV (las instrucciones y criterios con
-los que un modelo elige una opción entre varias) desde tu agente: Claude Code,
-Codex, OpenCode o Pi. Es un paquete Python, `gepa-capability`, con la CLI
-`gepa`, un servidor MCP (protocolo con el que un agente expone tools nativas) y
-cuatro skills que enseñan al agente a usarlo. Guía completa:
-[docs/install.md](docs/install.md).
+GEPA Capability ayuda a mejorar **instrucciones**, no los pesos de un modelo. Toma una Skill o una política de decisión JEV, la ejecuta sobre casos aprobados, propone variantes de su texto y compara los resultados con el original. El resultado es una recomendación con evidencia; el original no se reemplaza automáticamente.
 
-Requisitos: git, Python 3.12 o posterior, conexión a internet (pip descarga las
-dependencias de PyPI) y acceso a modelos: un servidor local compatible con la
-API de OpenAI (LM Studio, Ollama, llama.cpp, MLX…) o una cuenta de OpenRouter.
-El repositorio es privado: tu cuenta de GitHub necesita una invitación.
+Se usa desde un agente que pueda leer skills y ejecutar comandos, como Codex, Claude Code, OpenCode o Pi. El paquete `gepa-capability` aporta el motor Python, la CLI `gepa` y un servidor MCP opcional. Las cuatro skills guían al agente por el recorrido:
 
-## Instalar con tu agente
+| Skill | Para qué sirve | Resultado |
+| --- | --- | --- |
+| `setup-gepa` | Instalar o diagnosticar el motor y las conexiones a modelos | Entorno comprobado |
+| `prepare-gepa-experiment` | Definir el original, los casos y cómo se puntúan; previsualizar y pedir aprobación | Dataset aprobado `ds-…` |
+| `optimize-with-gepa` | Elegir los modelos y límites de **esta corrida**, buscar variantes y seguir el trabajo | Trabajo `job-…` con candidatos evaluados |
+| `review-gepa-results` | Comparar original y candidatos, examinar casos y decidir si exportar | Recomendación y, si se solicita, una copia exportada |
 
-Abre el agente en la carpeta raíz de tu proyecto y pídele:
+## Cómo funciona
 
-> Instala la capacidad GEPA desde https://github.com/PAAG-Ebicys/gepa-capability
-> en este proyecto. El repositorio es privado: lee su README con
-> `gh repo view PAAG-Ebicys/gepa-capability` o clonándolo con git.
-
-## Pasos para el agente
-
-Sigue los pasos en orden. Si uno falla, detente y díselo a la persona con el
-error exacto.
-
-1. **Comprueba el acceso** al repositorio:
-
-   ```bash
-   git ls-remote https://github.com/PAAG-Ebicys/gepa-capability
-   ```
-
-   Si responde `Repository not found` o pide credenciales, la cuenta de git de
-   esta máquina no tiene acceso. Pide a la persona que acepte la invitación al
-   repositorio y que inicie sesión, por ejemplo con `gh auth login` y después
-   `gh auth setup-git`, o en la ventana de Git Credential Manager. No sigas
-   hasta que el comando responda.
-
-2. **Instala el motor una vez por máquina, en un entorno que dure.** Nunca con
-   `uvx` ni en una carpeta temporal: el paso 3 guarda la ruta de ese Python en
-   cada skill y en el registro MCP, y un entorno temporal desaparece. Si la
-   persona prefiere otra carpeta para el entorno, usa la suya.
-
-   Con [uv](https://docs.astral.sh/uv/):
-
-   ```bash
-   uv tool install "git+https://github.com/PAAG-Ebicys/gepa-capability@v0.1.0" --python 3.12
-   ```
-
-   Sin uv, en Windows (PowerShell):
-
-   ```powershell
-   py -3.12 -m venv $HOME\gepa-venv
-   & $HOME\gepa-venv\Scripts\python.exe -m pip install "git+https://github.com/PAAG-Ebicys/gepa-capability@v0.1.0"
-   ```
-
-   Sin uv, en macOS o Linux:
-
-   ```bash
-   python3.12 -m venv ~/gepa-venv
-   ~/gepa-venv/bin/python -m pip install "git+https://github.com/PAAG-Ebicys/gepa-capability@v0.1.0"
-   ```
-
-3. **Instala las skills en el proyecto**, desde su carpeta raíz, con el `gepa`
-   del paso 2:
-
-   ```bash
-   gepa setup install --host claude-code
-   ```
-
-   Si `gepa` no está en el PATH, usa su ruta completa: la carpeta que indica
-   `uv tool dir --bin`, `$HOME\gepa-venv\Scripts\gepa.exe` (Windows) o
-   `~/gepa-venv/bin/gepa` (macOS o Linux). En PowerShell, antepón `&` a una
-   ruta entre comillas. Para otro agente cambia `--host`: `codex`, `opencode`,
-   `pi` o `generic`. El comando copia las cuatro skills donde el agente las
-   descubre y, si el agente lo admite, registra el servidor MCP `gepa`.
-
-4. **Comprueba el motor** con `gepa setup check`. Un `ready: false` con
-   `no-connections` o `role-unassigned` es lo esperado: faltan los modelos.
-
-5. **Termina aquí.** Dile a la persona que reinicie el agente desde la carpeta
-   raíz del proyecto, porque las skills se cargan al arrancar; que apruebe el
-   servidor MCP `gepa` si el agente lo pregunta; y que después pida «configura
-   GEPA». La skill `setup-gepa` guía la conexión de los modelos.
-
-## Actualizar a otra versión
-
-El sufijo `@v0.1.0` fija la versión instalada. Para cambiarla, reinstala con el
-tag nuevo y repite el paso 3 en cada proyecto, que copia las skills nuevas:
-
-```bash
-uv tool install --force "git+https://github.com/PAAG-Ebicys/gepa-capability@<tag>" --python 3.12
+```text
+Original + casos con respuesta esperada
+              │
+              ▼
+ Preparar → previsualizar → aprobar el dataset
+              │
+              ▼
+ Elegir conexiones y límites → búsqueda GEPA
+              │
+              ▼
+ Revisar evidencia → conservar o exportar una variante
 ```
 
-Con un venv: `python -m pip install --upgrade "git+https://github.com/PAAG-Ebicys/gepa-capability@<tag>"`
-con el Python de ese venv.
+Los casos se separan en **entrenamiento**, **validación** y **prueba reservada**. El entrenamiento da ejemplos y feedback a la búsqueda; la validación sirve para comparar y seleccionar candidatos; la prueba se guarda para una comprobación final independiente. Una propuesta puede fallar en una muestra pequeña y ser descartada antes de la validación completa. Por eso «una iteración de búsqueda» no equivale a «un candidato validado».
+
+Por ejemplo, una política puede recibir «pon una alarma a las cinco» y elegir `alarm_set` entre varias intenciones. Cada caso guarda la respuesta esperada fuera de la entrada del ejecutor. GEPA puede reescribir las instrucciones y las descripciones de las opciones, pero conserva los identificadores de las opciones. En una Skill, puede reescribir su `SKILL.md`; los demás recursos quedan fijos. [Ver el recorrido con más detalle](docs/flujo.md).
+
+## Modelos y límites
+
+Los nombres de modelos no vienen prefijados. Se crean **conexiones** a los modelos disponibles y se asignan según la tarea:
+
+- **Ejecutor:** realiza cada caso con el texto original o candidato.
+- **Reflexión:** examina el feedback y propone cambios de texto.
+- **Juez:** puntúa una rúbrica cuando el evaluador del dataset lo requiere. Con una respuesta exacta o comprobaciones deterministas puede no hacer falta.
+
+Una corrida puede elegir conexiones concretas en `models` sin cambiar las asignaciones generales. También admite límites de tiempo, evaluaciones e iteraciones de búsqueda (`maxProposals`, nombre histórico) y una meta opcional `validationScoreTarget` para la puntuación media de validación. La meta no se mide en la prueba reservada y **no siempre representa porcentaje de aciertos**: depende del evaluador aprobado. [Ver ejemplos y condiciones de parada](docs/flujo.md#límites-de-una-corrida).
+
+## Instalación rápida
+
+Requiere Python 3.12+, git y acceso al repositorio. El paquete se instala desde GitHub en un entorno persistente; las skills se copian después al proyecto donde trabajará el agente. Con [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install "git+https://github.com/PAAG-Ebicys/gepa-capability@main" --python 3.12
+gepa setup install --host codex
+gepa setup check --json
+```
+
+`@main` instala el código actual de la rama principal. El tag `@v0.1.0` fija la versión anterior y puede no incluir estas funciones. Para una instalación reproducible, sustituye `main` por el SHA de un commit probado. Ejecuta `setup install` desde la raíz del proyecto. Sustituye `codex` por `claude-code`, `opencode`, `pi` o `generic` según el agente. Si no tienes `uv`, o quieres conocer la instalación con wheel, el registro MCP y la resolución de errores, sigue la [guía de instalación](docs/install.md). Si GitHub responde `Repository not found`, comprueba el acceso de tu cuenta al repositorio.
+
+También puedes pedirle al agente, desde la raíz del proyecto: «Instala GEPA Capability desde este repositorio, verifica el acceso, usa un entorno Python persistente y ejecuta `gepa setup install` para mi anfitrión». Si falta acceso a un repositorio privado, deberá indicártelo antes de continuar.
+
+Tras instalar, recarga el agente y pide «configura GEPA». Los modelos concretos de una corrida se eligen al iniciarla; la previsualización del dataset ya necesita un ejecutor disponible. El diagnóstico global `gepa setup check` todavía marca `ready: false` hasta que los tres roles generales tengan conexiones, aunque un trabajo puede necesitar solo un subconjunto de esos roles.
+
+## Qué guarda y qué no cambia
+
+El motor guarda datasets, trabajos, métricas, trazas y un manifiesto de los modelos y límites usados. La exportación crea una carpeta nueva con la variante y su evidencia. **Aprobar un dataset, iniciar una búsqueda y exportar son pasos distintos**; ninguna búsqueda instala por sí sola la variante en tu proyecto.
+
+La CLI y el servidor MCP llaman al mismo motor. Si tu agente no ofrece las tools MCP, puede usar la CLI descrita por el `engine.md` que genera la instalación de las skills.

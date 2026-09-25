@@ -2,8 +2,8 @@
 
 A job freezes its manifest (original artifact, sealed dataset, adapter, evaluator, mutable
 surface, models and limits) before any model call. Running it searches with real GEPA on the
-train and validation partitions only, freezes the selection on validation, and only then
-evaluates the original and up to five finalists on the reserved test partition. The CLI and
+train and validation partitions only, and freezes the selection on validation. If a validated
+candidate wins, it then evaluates the original and up to five finalists on the reserved test partition. The CLI and
 the MCP server translate requests to :class:`JobService`; they never search or score on their own.
 """
 
@@ -41,7 +41,7 @@ SPEC_KEYS = frozenset({"name", "artifact", "dataset", "models", "limits", "seed"
 # ``executor`` and ``evaluator``: a Skill's session and evaluator; ``adapter``: the folder of an adapter an agent prepared; ``template``: the folder of a
 # template that gives those three instead. All sealed with the approval.
 PREPARE_KEYS = frozenset({"artifact", "objective", "inputs", "split", "executor", "evaluator", "adapter", "template"})
-LIMIT_KEYS = frozenset({"maxMetricCalls", "maxProposals", "timeLimitMinutes", "reflectionMinibatchSize"})  # plus each adapter's output tokens per role
+LIMIT_KEYS = frozenset({"maxMetricCalls", "maxProposals", "timeLimitMinutes", "reflectionMinibatchSize", "validationScoreTarget"})  # plus each adapter's output tokens per role
 MAX_OUTPUT_TOKENS = 32768
 PREVIEW_SAMPLE = 6  # original runs shown before approving
 REVIEW_RECOMMENDATION = ("Recomendación firme: revisa el dataset completo antes de aprobar (cada caso, su partición y su 'expected'). "
@@ -956,8 +956,12 @@ class JobService:
         minutes = raw.get("timeLimitMinutes", 60)
         if not _finite(minutes) or not 0 < minutes <= 1440:
             raise JobError("'timeLimitMinutes' debe estar entre 0 y 1440.", "invalid-limits")
+        target = raw.get("validationScoreTarget")
+        if target is not None and (not _finite(target) or not 0 <= target <= 1):
+            raise JobError("'validationScoreTarget' debe ser un número entre 0 y 1 (puntuación media en validación completa).", "invalid-limits")
         tokens = {key: _integer(raw, key, default, 1, MAX_OUTPUT_TOKENS) for key, default in adapter.limit_defaults.items()}
         return {"maxMetricCalls": metric_calls, "maxProposals": proposals, "reflectionMinibatchSize": minibatch, "timeLimitMinutes": minutes,
+                "validationScoreTarget": target,
                 **tokens, "maxFinalEvaluations": (MAX_FINALIST_PROPOSALS + 1) * counts["test"]}
 
     def _requester(self, manifest: Mapping[str, Any]) -> Callable[..., dict[str, Any]]:
@@ -1102,9 +1106,9 @@ def _saved_search(job: Mapping[str, Any], folder: Path, data_dir: Path) -> dict[
 class _Run:
     """GEPA adapter for one attempt of a job: evaluates candidates, records evidence and what each phase spent, and enforces the frozen limits.
 
-    A ``run`` attempt searches and then evaluates the finalists on the reserved test; a ``final-retry`` attempt continues a stored
-    result whose selection is frozen and evaluates only the reserved test cases still pending; a ``continue-search`` attempt continues
-    a search cut short from the state GEPA saved in ``folder`` (``saved`` is what the engine kept in it), then runs the reserved test.
+    A ``run`` attempt searches and evaluates finalists on reserved test only if a validated candidate wins. A ``final-retry``
+    closes a frozen selection and evaluates pending reserved cases if needed; a ``continue-search`` resumes a cut-short search
+    from GEPA's saved state in ``folder`` (``saved`` is what the engine kept in it), then applies the same selection rule.
     Before each model call and each case the attempt stops at a safe point if someone asked to cancel it or its time ran out.
     """
 
@@ -1132,7 +1136,7 @@ class _Run:
         # GEPA swallows (and retries) exceptions raised while proposing; defer them to its next stop check.
         self.pending: Exception | None = None
         self.search_stop: str | None = None
-        self.iterations = 0  # iterations in GEPA's state, the unit of maxProposals: an iteration a continuation repeats counts once
+        self.iterations = 0  # iterations/attempts in GEPA's state, not candidates with full validation
         # A continuation first replays the original's validation, which GEPA asks for before loading its state; the candidates proposed
         # after that state was saved (lost with the cut) may be proposed and evaluated again, their earlier results kept in earlierCases.
         self.replaying = saved is not None
@@ -1369,10 +1373,15 @@ class _Run:
 
     def should_stop(self, gepa_state: Any) -> bool:
         """GEPA's check before each iteration. A failure deferred from a proposal is raised here, before GEPA saves that iteration as done, so
-        a continuation repeats it. ``maxProposals`` counts the iterations in GEPA's state; ``maxMetricCalls``, every evaluation the job spent."""
+        a continuation repeats it. ``maxProposals`` counts search iterations, not individual proposals or validated candidates;
+        ``maxMetricCalls`` counts evaluations."""
         self.iterations = gepa_state.i + 1
         if self.pending is not None:
             raise self.pending
+        target = self.limits.get("validationScoreTarget")
+        if target is not None and gepa_state.program_full_scores_val_set and max(gepa_state.program_full_scores_val_set) >= target:
+            self.search_stop = "validation_target"
+            return True
         if self.iterations >= self.limits["maxProposals"]:
             self.search_stop = "max_proposals"
             return True
@@ -1409,6 +1418,9 @@ class _Run:
         if self.attempt["kind"] == "final-retry":
             if self.result["selection"] is None:
                 self.freeze_selection()
+            if self.result["selection"]["selectedIsOriginal"] and self.result["finalCheck"] is None:
+                self.skip_final_check()
+                return
             self.final_check()
             return
         spent = self.result["counts"]["searchEvaluations"]
@@ -1423,7 +1435,7 @@ class _Run:
                        f"no se repiten las {state['iterations']} iteraciones completas y la validación del original se toma de la evidencia guardada. "
                        f"Lo que el intento anterior hizo después de ese estado ({len(self.result['proposals']) - self.saved['proposals']} propuestas) se "
                        f"conserva, y lo que se repita cuenta como gasto nuevo. Presupuesto del trabajo: van {state['iterations']} de "
-                       f"{self.limits['maxProposals']} iteraciones y {spent} de {self.limits['maxMetricCalls']} evaluaciones. La prueba reservada "
+                       f"{self.limits['maxProposals']} iteraciones de búsqueda y {spent} de {self.limits['maxMetricCalls']} evaluaciones. La prueba reservada "
                        "sigue fuera de la búsqueda.")
         _event(self.job, "search", message)
         self.save()
@@ -1452,7 +1464,10 @@ class _Run:
                                    "evidencia guardados se conservan y no se ejecutó la prueba reservada.")
             return
         self.freeze_selection()
-        self.final_check()
+        if self.result["selection"]["selectedIsOriginal"]:
+            self.skip_final_check()
+        else:
+            self.final_check()
 
     def freeze_selection(self) -> None:
         baseline = self.by_id[self.result["baselineId"]]
@@ -1473,6 +1488,18 @@ class _Run:
                  "validación completa, sin continuar GEPA." if stopped else "")
         _event(self.job, "selection", f"Selección congelada por validación antes de la prueba reservada: {selected['label']} ({selected['id']}); "
                                       f"{len(finalists)} finalistas.{where}")
+        self.save()
+
+    def skip_final_check(self) -> None:
+        """Keep the held-out test sealed when search found no validated improvement over the original."""
+        self.result["finalCheck"] = {"status": "skipped", "split": "test", "total": len(self.rows["test"]),
+                                     "required": 0, "resolved": 0, "evaluations": 0, "attempts": 0,
+                                     "reason": "original-selected"}
+        self.result["stopReason"] = "completed"
+        self.record_seconds()
+        lifecycle.finish(self.job, "completed", reason="completed")
+        self.job["phase"] = None
+        _event(self.job, "final-skipped", "Ningún candidato superó al original en la validación completa; se conservó el original y no se abrió la prueba reservada.")
         self.save()
 
     def resolved_tests(self) -> int:

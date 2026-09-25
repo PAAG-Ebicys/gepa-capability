@@ -2,7 +2,7 @@
 name: optimize-with-gepa
 description: Optimiza con GEPA una política de decisión JEV o una Skill usando un dataset aprobado, y compara el original con los candidatos. Úsala cuando la persona pida "optimiza esta política" u "optimiza esta skill", "mejora las instrucciones, los criterios o el SKILL.md con estos ejemplos", o quiera iniciar, seguir, cancelar, reintentar o exportar un trabajo GEPA.
 license: MIT
-compatibility: Requiere el motor comprobado con setup-gepa. MCP es opcional; la CLI `gepa` da el mismo resultado.
+compatibility: Requiere el motor instalado y un dataset aprobado. MCP es opcional; la CLI `gepa` da el mismo resultado.
 metadata:
   version: "0.1.0"
   engine: "gepa==0.1.4"
@@ -76,6 +76,17 @@ GEPA solo reescribe `instructions` y la descripción de cada opción:
 que se previsualizó al aprobarlo. `objective` es opcional: el trabajo usa el aprobado.
 `models` es opcional (`{"decider": "<conexión>", "reflection": "<conexión>"}`);
 por defecto usa los roles `executor` y `reflection` de setup-gepa.
+Los límites son de este trabajo, no del dataset. `maxProposals` cuenta
+**iteraciones de búsqueda de GEPA**, no propuestas individuales ni candidatos que necesariamente llegan a
+validación completa: una propuesta puede perder o empatar en la muestra de
+entrenamiento y quedar descartada. `maxMetricCalls` limita evaluaciones de
+búsqueda y `timeLimitMinutes` limita cada intento completo, incluida la prueba
+final cuando corresponda. El motor no reserva automáticamente tiempo para esa
+prueba. Opcionalmente,
+`limits.validationScoreTarget` admite un número de 0 a 1 para detener la
+búsqueda cuando el mejor resultado en **validación completa** alcanza esa meta;
+si el original ya la cumple, puede parar antes de proponer nada. En una tarea
+de exactitud, 0,8 es 80 % de aciertos; en una rúbrica, es puntuación media 0,8.
 
 **Skill:** `artifact` es la carpeta de la Skill, y GEPA reescribe solo su `SKILL.md`
 (el `name` del frontmatter y los demás archivos quedan fijos):
@@ -98,13 +109,28 @@ evaluador consulta un juez, `judge`).
 
 ## Procedimiento
 
-1. **Comprobar el entorno** con `gepa_setup_check` o `gepa setup check --json`.
-   Listo cuando `ready` es `true`; si no, resuelve los hallazgos con setup-gepa.
+1. **Comprobar el motor** con `gepa_setup_check` o `gepa setup check --json`.
+   Resuelve con setup-gepa los hallazgos que afecten a este trabajo. Un rol
+   global pendiente no bloquea si `models` indica una conexión válida para ese
+   rol. Listo cuando el motor y las conexiones necesarias responden.
 2. **Obtener un dataset aprobado** con prepare-gepa-experiment: casos
    validados, el original previsualizado y la aprobación de la persona. `train`
    alimenta la reflexión, `val` elige el candidato y `test` queda reservado para
-   la evaluación final. Listo cuando tienes un `datasetId` `ds-…`.
-3. **Iniciar el trabajo.** Los errores de preparación llegan antes de gastar
+   comprobar la selección si existe una mejora validada. Listo cuando tienes
+   un `datasetId` `ds-…`.
+3. **Cerrar modelos y límites con la persona antes de iniciar.** Elige
+   conexiones para el ejecutor/decisor, la reflexión y el juez solo si la
+   evaluación lo requiere; usa `models` para elecciones de este trabajo o los
+   roles globales ya asignados. Recupera las preferencias de tiempo y meta de
+   validación anotadas al preparar el dataset, si las hay. Concreta
+   `maxMetricCalls`, `maxProposals`, `timeLimitMinutes` y, opcionalmente,
+   `validationScoreTarget`; muestra qué significa cada límite y estima si el
+   presupuesto alcanza para validar el original, probar varias iteraciones y
+   dejar tiempo para la comprobación final. Convierte un porcentaje en número de
+   aciertos solo cuando la métrica principal es exactitud. Advierte si la meta
+   ya la cumple el original: eso puede parar la búsqueda inmediatamente.
+   Listo cuando la persona conoce los modelos y límites efectivos del trabajo.
+4. **Iniciar el trabajo.** Los errores de preparación llegan antes de gastar
    presupuesto como `{"error", "code"}` (en la tool, o en stdout con `--json`).
    Decide por el `code`, explícalo y corrige con la persona:
    - con prepare-gepa-experiment: `dataset-not-approved`, `artifact-not-approved`,
@@ -116,13 +142,18 @@ evaluador consulta un juez, `judge`).
    - en `trabajo.json` o en el original: `budget-too-small`, `invalid-policy`,
      `invalid-skill`. Listo cuando la
    respuesta trae un `jobId` y tienes su `status`.
-4. **Seguir** con la consulta hasta que `status` sea `completed`, `stopped`,
+5. **Seguir** con la consulta hasta que `status` sea `completed`, `stopped`,
    `failed`, `cancelled` o `interrupted`. `phase` dice dónde está o dónde
    terminó (`preparation`, `search`, `final`); `events` cuenta lo ocurrido.
    `consumption.search` compara las evaluaciones con el presupuesto de búsqueda,
    y `consumption.final` da los casos resueltos (`resolved`) de los requeridos
-   (`required`) en la prueba reservada; las dos dicen llamadas, tokens, coste y
-   segundos. Informa del progreso cuando la persona lo pida, no en cada consulta.
+   (`required`) en la prueba reservada cuando se ejecuta; las dos dicen
+   llamadas, tokens, coste y segundos. Explica cada propuesta como generada,
+   probada en muestra, descartada o llevada a validación completa según sus
+   eventos. Una iteración consumida sin candidato validado no demuestra una
+   mejora. Si la selección conserva el original, el trabajo omite `test` para
+   reservarlo para una búsqueda futura. Informa del progreso cuando la persona
+   lo pida, no en cada consulta.
    - **Cancelar** solo cuando la persona lo pida. Un trabajo en curso responde
      con `cancelRequested` y se detiene antes de su siguiente llamada: sigue
      consultando hasta `cancelled`.
@@ -137,7 +168,8 @@ evaluador consulta un juez, `judge`).
      `message` de cada una:
      - `continue-search`: seguir buscando desde el último estado guardado de
        GEPA, como después de una pausa;
-     - `final-retry`: cerrar con los candidatos ya validados.
+     - `final-retry`: cerrar con los candidatos ya validados; solo se usa la
+       prueba reservada si alguno supera al original.
 
      Reintenta con el `kind` que elija. Con `search-state-missing`,
      `search-state-damaged` o `search-state-mismatch` no se puede continuar:
@@ -153,13 +185,13 @@ evaluador consulta un juez, `judge`).
      `adapter-error` (el adaptador rompió su contrato o falló) e
      `infrastructure-error` (falló el entorno de la tarea): se corrige el
      adaptador, se prepara y aprueba de nuevo y se crea otro trabajo.
-5. **Revisar con review-gepa-results.** Esa skill lee el informe de
+6. **Revisar con review-gepa-results.** Esa skill lee el informe de
    `gepa_job_review` o `gepa job review <jobId> --json` y explica la
    comparación por caso, los límites de la evidencia y la recomendación (conservar el
    original salvo mejora demostrada). La vista de `gepa job show` solo dice qué
    candidato eligió la validación. El paso termina cuando la persona conoce la
    recomendación del informe y su motivo.
-6. **Exportar** solo cuando la persona lo pida, a una carpeta nueva fuera de la
+7. **Exportar** solo cuando la persona lo pida, a una carpeta nueva fuera de la
    carpeta del original. Listo cuando existen `policy.json` (o `skill/`, con el
    `SKILL.md` del candidato y los recursos originales), `manifest.json` y
    `evidence.json`, y el original sigue intacto. Instalar lo exportado es una
@@ -168,5 +200,5 @@ evaluador consulta un juez, `judge`).
 ## Reglas
 
 - Las credenciales viven solo en las conexiones de setup-gepa.
-- Los resultados de `test` informan la decisión; una nueva versión del original
-  necesita un dataset aprobado nuevo y otro trabajo.
+- Cuando se ejecuta, `test` comprueba la selección ya hecha por validación; una
+  nueva versión del original necesita un dataset aprobado nuevo y otro trabajo.
