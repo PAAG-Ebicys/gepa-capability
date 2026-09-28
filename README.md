@@ -56,6 +56,18 @@ También puedes pedirle al agente, desde la raíz del proyecto: «Instala GEPA C
 
 Tras instalar, recarga el agente y pide «configura GEPA». Los modelos concretos de una corrida se eligen al iniciarla; la previsualización del dataset ya necesita un ejecutor disponible. El diagnóstico global `gepa setup check` todavía marca `ready: false` hasta que los tres roles generales tengan conexiones, aunque un trabajo puede necesitar solo un subconjunto de esos roles.
 
+### Claude Code
+
+Desde la raíz del proyecto, instala el motor y las cuatro skills:
+
+```bash
+uv tool install "git+https://github.com/PAAG-Ebicys/gepa-capability@main" --python 3.12
+gepa setup install --host claude-code
+claude
+```
+
+El instalador crea las skills en `.claude/skills` y añade el servidor `gepa` a `.mcp.json`. En Claude Code, aprueba el servidor MCP del proyecto, comprueba su conexión con `/mcp` y ejecuta `/setup-gepa`. [Guía de Claude Code: instalación por proyecto o para todos tus proyectos](docs/install-claude-code.md).
+
 ## Qué guarda y qué no cambia
 
 El motor guarda datasets, trabajos, métricas, trazas y un manifiesto de los modelos y límites usados. La exportación crea una carpeta nueva con la variante y su evidencia. **Aprobar un dataset, iniciar una búsqueda y exportar son pasos distintos**; ninguna búsqueda instala por sí sola la variante en tu proyecto.

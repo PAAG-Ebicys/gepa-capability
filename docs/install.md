@@ -63,6 +63,8 @@ Usa `--host claude-code`, `opencode`, `pi` o `generic` si corresponde. Con un ve
 
 El comando copia `setup-gepa`, `prepare-gepa-experiment`, `optimize-with-gepa` y `review-gepa-results`. También genera un `engine.md` con la ruta del intérprete y la configuración del motor; por eso el agente puede usar la CLI aunque `gepa` no esté en su PATH. Con `--scope user` puedes instalar las skills para todos tus proyectos, pero configura explícitamente `GEPA_HOME` o `--home` si quieres que el registro MCP global apunte a una misma configuración. La opción por defecto es `project`.
 
+Para Claude Code, sigue la [guía específica](install-claude-code.md), que explica cómo activar las skills, comprobar MCP y elegir entre instalación por proyecto o de usuario.
+
 ## 3. Comprobar y configurar modelos cuando los necesites
 
 ```bash
