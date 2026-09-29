@@ -110,7 +110,9 @@ sella junto con su regla de agregación (`evaluator.aggregation.rule`):
 - En el resumen: `artifact.files` (lo que queda fijo), `executor`,
   `evaluator.description`, `evaluator.aggregation.rule` y, con juez,
   `evaluator.rubric`. No hay `coverage.expected`: cada caso tiene sus propias
-  comprobaciones.
+  comprobaciones. Estos campos son fuentes para tu lectura: presenta los
+  archivos que se conservan, cómo se ejecuta la tarea y qué cuenta como éxito
+  en lenguaje cotidiano, según la regla de presentación de SKILL.md.
 - En la previsualización, además de `output`, `score`, `submetrics` y
   `feedback`: `requirementsMet`, `checks` (qué se cumplió y un resumen de lo
   obtenido frente a lo esperado), `effects` (archivos creados o modificados),
@@ -118,4 +120,6 @@ sella junto con su regla de agregación (`evaluator.aggregation.rule`):
   criterio, y un resumen). Pregunta también si cada razón del juez coincide con
   el criterio de la persona. Un caso donde el original acierta con comprobaciones
   débiles, o donde el juez premia algo que la persona rechazaría, revela un
-  `expected` o una rúbrica que no representan el objetivo.
+  `expected` o una rúbrica que no representan el objetivo. Explica resultados,
+  archivos afectados y motivos relevantes; no vuelques claves ni trazas de la
+  sesión en la revisión normal. Los detalles quedan disponibles si los pide.

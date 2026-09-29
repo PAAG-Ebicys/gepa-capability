@@ -26,6 +26,8 @@ Conviene revisar con cuidado las respuestas ambiguas antes de aprobar. Un modelo
 
 Durante la preparación se pueden anotar preferencias de presupuesto o de meta de validación. No cambian los casos sellados: se confirman al crear cada trabajo y pueden ser distintas en otra corrida del mismo dataset.
 
+En la conversación, el agente presenta los ejemplos y las respuestas esperadas en una tabla sencilla. El reparto de los casos lo gestiona el motor: no necesitas elegir etiquetas `train`, `val` o `test`, semillas ni parámetros del dataset. Las instrucciones explican que algunos ejemplos se reservan para comprobar el resultado; los detalles técnicos siguen disponibles si los necesitas.
+
 ## 3. Optimizar
 
 `optimize-with-gepa` toma el `ds-…` y el mismo original que se previsualizó. Antes de lanzar, resuelve las conexiones que este trabajo necesita y los límites elegidos. Un ejemplo de especificación para una política JEV:

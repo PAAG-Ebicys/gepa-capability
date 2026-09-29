@@ -156,6 +156,13 @@ cambia mientras corre un caso, la evaluación se detiene con `adapter-changed`.
   coincide con el criterio de la persona: un desacuerdo revela un `evaluate`
   mal orientado, que se corrige en `adapter.py` antes de aprobar.
 
+Los campos anteriores son fuentes para el agente. Aplica la regla de
+presentación de SKILL.md: explica qué ejecuta el adaptador, qué recursos y
+permisos necesita, qué produce y cómo se decide si acertó. Presenta los casos
+con entrada, resultado esperado y observado; reserva hashes, claves y pasos
+internos para una petición de detalle o un diagnóstico. Conserva las advertencias
+que cambian el alcance de la evaluación, expresadas en palabras comprensibles.
+
 ## Códigos
 
 | code | Qué significa | Qué hacer |
