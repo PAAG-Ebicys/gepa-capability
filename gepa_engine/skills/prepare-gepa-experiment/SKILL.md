@@ -15,6 +15,38 @@ original ejecutado sobre algunos de ellos y una versión aprobada (`ds-…`) que
 `optimize-with-gepa` puede usar. El motor importa, valida, divide y sella; tú
 reúnes los casos con la persona, le presentas la evidencia y pides su aprobación.
 
+## Presentar los casos, no el formato interno
+
+La conversación normal muestra el objetivo, cuántos ejemplos hay, de dónde
+vienen, qué respuesta se espera y qué significa acertar. Una tabla de revisión
+usa **Caso · Entrada · Respuesta esperada**; en la previsualización añade
+**Respuesta obtenida · Evaluación** y explica los desacuerdos importantes.
+Incluye archivos o efectos observables cuando sean parte de la tarea.
+
+`train`, `val`, `test`, `split`, semillas, hashes, IDs del motor y claves de
+JSON son información para el agente y sus archivos, no columnas ni preguntas
+del recorrido habitual. El motor reparte los casos; conserva las particiones
+aportadas y las reglas contra duplicados, sin pedir al usuario decidir el
+reparto o la semilla. Usa detalles técnicos cuando la persona los solicite
+o sean necesarios para resolver un problema concreto, explicando su propósito.
+
+Basta explicar una vez: «Usaremos parte de los ejemplos para buscar mejoras y
+guardaremos otros para comprobar el resultado». Si importa distinguir la
+selección de la comprobación final, explica esas dos funciones en palabras
+cotidianas. Esto cambia la presentación, no las particiones ni la aprobación.
+Lee tú toda la cobertura y los avisos: comunica sus consecuencias relevantes,
+por ejemplo «faltan ejemplos de esta categoría», sin copiar el JSON.
+
+Ejemplo de revisión para una decisión de intenciones:
+
+| Caso | Entrada | Respuesta esperada |
+| --- | --- | --- |
+| 1 | Pon una alarma a las cinco | Crear una alarma |
+| 2 | Agenda una reunión mañana | Crear un evento |
+
+La aprobación pregunta si esos casos y respuestas representan lo que se
+quiere mejorar; no pide aprobar etiquetas como `train` o parámetros internos.
+
 ## Operaciones
 
 Cada tool del servidor MCP `gepa` y su comando CLI devuelven el mismo JSON.
@@ -41,6 +73,12 @@ Skill; la solicitud siguiente es la de una política JEV.
 incluidos no hacen (ejecutar código, un navegador, una API, otro sandbox u otro
 evaluador), lee [new-adapter.md](new-adapter.md) antes del paso 3: con la
 persona se prepara y comprueba un adaptador propio.
+
+**Formato JEV:** antes de tratar un artefacto como política integrada, lee
+[jev-formats.md](jev-formats.md) y comprueba su esquema y contrato de salida.
+Un JEV externo puede usar otro formato. Elegir OpenRouter no convierte ese
+formato al del motor; identifica y comprueba la compatibilidad tú, reutilizando
+las conexiones de setup-gepa.
 
 **Plantilla:** si en el paso 2 la persona elige una plantilla, lee
 [templates.md](templates.md) antes del paso 3. Una plantilla es una carpeta del
@@ -126,9 +164,11 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
    decida. Listo cuando `ready` es `true` y hay un `draftId`.
 5. **Presentar el resumen** para que la persona confirme la alineación: que el
    objetivo corresponde a estos casos y a la forma de ejecutarlos y
-   puntuarlos. Presenta `objective`, recuentos por partición,
-   `coverage.expected` (casos por opción y partición), `coverage.sources`,
-   `evaluator.description` y `criteria` (cada opción con su descripción); en una
+   puntuarlos. Lee `objective`, recuentos por partición, `coverage.expected`,
+   `coverage.sources`, `evaluator.description` y `criteria`. Presenta su
+   significado según «Presentar los casos, no el formato interno»: objetivo,
+   total de ejemplos, categorías cubiertas, procedencia y criterio de éxito;
+   el reparto y sus claves se quedan en la evidencia interna. En una
    Skill o con un adaptador propio, lo que indica «Qué revisar con la persona»
    en [skill-cases.md](skill-cases.md) o en [new-adapter.md](new-adapter.md), y
    las marcas de obligatorio, como indica «Comprobaciones obligatorias». Con
@@ -142,8 +182,10 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
    juez; comprueba su respuesta con setup-gepa. Indica el ejecutor con
    `decider`/`--decider` y el juez con `judge`/`--judge`, o usa los roles
    globales disponibles; esa elección no establece por sí sola el modelo de
-   reflexión de la futura búsqueda. Muestra por caso `input`, `expected`,
-   `output`, `score`, `submetrics` y `feedback`; en una Skill o con un
+   reflexión de la futura búsqueda. Lee por caso `input`, `expected`,
+   `output`, `score`, `submetrics` y `feedback`; muestra entrada, respuesta
+   esperada, obtenida y evaluación en lenguaje de la tarea, no esas claves.
+   En una Skill o con un
    adaptador propio, también lo que indica «Qué revisar con la persona» en
    [skill-cases.md](skill-cases.md) o en [new-adapter.md](new-adapter.md). Pregunta si cada score coincide con
    su criterio: un desacuerdo revela un evaluador mal orientado, una rúbrica o un
@@ -152,8 +194,9 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
    Listo cuando `status` es `complete` y la persona confirma que los scores
    tienen sentido caso por caso.
 7. **Recomendar con firmeza revisar el dataset completo** (`review.recommendation`).
-   Si acepta, muéstrale todos los casos con `gepa dataset show <draftId> --cases`
-   por bloques, hasta el último. Listo cuando la persona revisó el último caso o
+   Si acepta, lee todos los casos con `gepa dataset show <draftId> --cases`
+   y preséntalos en la tabla de revisión por bloques, hasta el último, sin
+   columnas de partición ni metadatos internos. Listo cuando la persona revisó el último caso o
    decidió, tras la recomendación, aprobar sin revisarlos todos.
 8. **Aprobar** solo tras un sí explícito. `reviewedAllCases: true` (o
    `--reviewed-all`) únicamente si la persona revisó todos los casos. Listo
@@ -163,7 +206,8 @@ a su archivo, según «Cambiar casos de un archivo de la persona».
    [templates.md](templates.md).
 9. **Anotar preferencias para la corrida** si la persona quiere decidirlas ya:
    pregunta por un tiempo máximo y, opcionalmente, una meta de puntuación en
-   validación, o si prefiere decidir ambas al optimizar. En clasificación con
+   los ejemplos usados para comparar las mejoras, o si prefiere decidir ambas
+   al optimizar. En clasificación con
    exactitud, presenta la meta como porcentaje y número mínimo de aciertos;
    con rúbricas o métricas propias, usa el nombre y la escala de la métrica
    principal. Incluye las preferencias elegidas en la entrega del dataset

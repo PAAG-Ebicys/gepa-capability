@@ -50,9 +50,17 @@ vería qué hiciste.
 
 ## Procedimiento
 
+Lee los campos técnicos para verificar la evidencia; presenta a la persona
+la recomendación, resultados comparables y ejemplos de aciertos y errores.
+En lugar de `train`, `val` o `test`, explica si los ejemplos sirvieron para
+buscar cambios, elegir la versión o comprobar el resultado final. La mejora
+durante la búsqueda no se presenta como prueba independiente. IDs, hashes y
+JSON quedan en el informe técnico y se muestran si los solicita o si hacen
+falta para identificar un problema concreto.
+
 1. **Identificar el trabajo.** Busca el `jobId` con la lista (por nombre, fecha o
    `datasetId`). El paso termina cuando tienes un `jobId` que la persona confirma.
-2. **Leer el informe** y explicar a la persona, en este orden:
+2. **Leer el informe** y comprobar estos puntos antes de presentar resultados:
    - `completeness.status`. Si es `incomplete`, di qué falta con
      `completeness.message`. Un `score` en `null` significa que no hay porcentaje:
      informa `evaluated` de `total` casos. Si el trabajo se detuvo antes de
@@ -79,16 +87,21 @@ vería qué hiciste.
    - `testObservedBefore`: qué trabajos anteriores ya habían evaluado esos casos
      de prueba.
 
-   El paso termina cuando cada uno de estos seis puntos quedó dicho con sus
-   números.
+   El paso termina cuando verificaste los seis puntos. Presenta la conclusión,
+   la comparación con el original y la cantidad de casos que la respaldan;
+   incluye las limitaciones materiales: evaluación incompleta, comprobación
+   final omitida, casos finales usados antes, modelos utilizados y coste
+   desconocido. Los conteos internos, hashes y submétricas se amplían solo
+   cuando ayudan a entender un caso o la persona pide detalle.
 
    Si `presentation` no es `null`, el trabajo se preparó con una plantilla.
-   `presentation.template` la nombra por su nombre, su versión y su `sha256`
+   Lee `presentation.template`: la nombra por su nombre, su versión y su `sha256`
    (el contenido exacto que se congeló), y por la ruta de su carpeta; un
    trabajo de antes de que las plantillas fueran carpetas la nombra por su
-   `templateId`. Nombra la métrica principal con
-   `metricLabel` y cada submétrica con su etiqueta de `submetrics`, junto al
-   nombre guardado, y usa `notes` para explicar los resultados. La plantilla
+   `templateId`. En la explicación habitual basta el nombre de la plantilla.
+   Nombra la métrica principal con `metricLabel`; cuando presentes una
+   submétrica, usa su etiqueta de `submetrics`. Los nombres internos siguen en
+   el informe técnico. Usa `notes` para explicar los resultados. La plantilla
    solo nombra y explica: cada número, la selección y la recomendación salen de
    la evidencia de este trabajo.
 3. **Comparar** el original y los candidatos por partición.
@@ -134,8 +147,9 @@ vería qué hiciste.
    `null` no tiene casos comunes con el original; si no queda ningún caso que
    abrir, dilo. Así la persona ve si ese cambio explica la mejora.
 
-   `recommendation` es la del motor: preséntala tal cual, y el cambio como
-   información. No hay umbral fijo: la valoración del cambio es de la persona.
+   `recommendation` es la del motor: conserva su conclusión y motivo al
+   explicarlos en lenguaje cotidiano, y presenta el cambio como información.
+   No hay umbral fijo: la valoración del cambio es de la persona.
    Cierra con sus opciones (exportar, abrir los casos que mejoran, comprobar el
    candidato con otro modelo, conservar el original) y pregúntale cuál
    prefiere. El paso termina cuando cada candidato presentado tiene su
@@ -155,6 +169,10 @@ vería qué hiciste.
    modelos, comandos y notas del caso, en orden). Un caso con
    `requirementsMet: false` puntúa 0 aunque el juez le diera buena nota. El paso
    termina cuando cada caso que la persona preguntó tiene su explicación.
+   Esos campos son fuentes de evidencia: muestra lo esperado, lo obtenido y
+   por qué mejoró o falló. Trazas, hashes, acciones y métricas internas se
+   consultan para explicar el problema o ante una solicitud técnica, no se
+   vuelcan automáticamente en la respuesta.
 7. **Exportar** solo si la persona lo decide, ya sabiendo qué cambió el
    candidato (paso 5), y el candidato tiene `exportable: true`, con el
    `export.cli` o `export.tool` del informe. Usa una carpeta nueva.

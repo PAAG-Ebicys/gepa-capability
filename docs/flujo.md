@@ -26,6 +26,8 @@ Conviene revisar con cuidado las respuestas ambiguas antes de aprobar. Un modelo
 
 Durante la preparación se pueden anotar preferencias de presupuesto o de meta de validación. No cambian los casos sellados: se confirman al crear cada trabajo y pueden ser distintas en otra corrida del mismo dataset.
 
+En la conversación, el agente presenta los ejemplos y las respuestas esperadas en una tabla sencilla. El reparto de los casos lo gestiona el motor: no necesitas elegir etiquetas `train`, `val` o `test`, semillas ni parámetros del dataset. Las instrucciones explican que algunos ejemplos se reservan para comprobar el resultado; los detalles técnicos siguen disponibles si los necesitas.
+
 ## 3. Optimizar
 
 `optimize-with-gepa` toma el `ds-…` y el mismo original que se previsualizó. Antes de lanzar, resuelve las conexiones que este trabajo necesita y los límites elegidos. Un ejemplo de especificación para una política JEV:
@@ -46,6 +48,8 @@ Durante la preparación se pueden anotar preferencias de presupuesto o de meta d
 ```
 
 `models` elige **IDs de conexiones ya configuradas**, no nombres de modelos. Puede omitirse para usar los roles por defecto. Una Skill usa `models.executor`; `models.judge` se usa si el evaluador aprobado necesita juez. Un adaptador propio declara los roles necesarios para esa tarea. El manifiesto del trabajo congela qué conexiones, modelos y límites se usaron.
+
+Si el decisor es Jev de TypeSafe en OpenRouter, su conexión usa el protocolo `decisions`; el motor envía la política choice a la API nativa y conserva la decisión y sus probabilidades. Ese modelo no genera las propuestas de GEPA: la reflexión usa una conexión de chat distinta. Los modelos concretos los eliges tú; el agente configura el protocolo correspondiente.
 
 La búsqueda se puede entender como esta secuencia:
 

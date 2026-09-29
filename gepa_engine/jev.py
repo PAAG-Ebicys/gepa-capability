@@ -19,7 +19,7 @@ from .errors import ContractError
 ADAPTER = {"name": "jev-choice", "version": "1"}
 EVALUATOR = {
     "name": "exact-choice", "version": "2", "primaryMetric": "accuracy", "higherIsBetter": True,
-    "description": 'Puntúa 1 si la salida completa es exactamente {"choice": "<id>"} con la opción esperada; puntúa 0 si la opción difiere o la salida no cumple el contrato.',
+    "description": 'Puntúa 1 si la opción válida coincide con la esperada. En chat exige únicamente {"choice": "<id>"}; en decisions normaliza una respuesta nativa choice validada a ese objeto. Una opción distinta o una salida de chat inválida puntúa 0; una respuesta nativa malformada detiene la evaluación como error de proveedor.',
 }
 COMPONENT = "policy"
 POLICY_KEYS = frozenset({"question", "type", "instructions", "criteria"})
@@ -30,7 +30,7 @@ MAX_OPTIONS = 50
 MAX_OUTPUT_KEPT = 4000
 OUTPUT_CONTRACT = 'JSON {"choice": "<id de una opción permitida>"}'
 
-ModelRequest = Callable[[str, list[dict[str, str]]], Mapping[str, Any]]
+ModelRequest = Callable[[str, "list[dict[str, str]] | ChoiceRequest"], Mapping[str, Any]]
 
 
 class PolicyError(ContractError):
@@ -52,6 +52,14 @@ class ChoicePolicy:
 
     def surface(self) -> dict[str, Any]:
         return {"instructions": self.instructions, "criteria": dict(self.criteria)}
+
+
+@dataclass(frozen=True)
+class ChoiceRequest:
+    """A transient structured decision; the job chooses chat or native transport from its frozen connection."""
+
+    policy: ChoicePolicy
+    state: Any
 
 
 def _text(value: Any, what: str, limit: int) -> str:
@@ -228,7 +236,7 @@ class JevChoiceAdapter:
     preview_max_tokens: ClassVar[int] = 512
     case_fields = frozenset({"input", "expected"})  # the decider sees only ``input``; the evaluator compares ``expected``
     # How a case runs, recorded in each job's manifest as part of the target the evidence holds for.
-    execution: ClassVar[dict[str, Any]] = {"agent": None, "tools": [], "description": "Una llamada de chat al decisor por caso; solo recibe el estado del caso."}
+    execution: ClassVar[dict[str, Any]] = {"agent": None, "tools": [], "description": "Una decisión choice por caso: chat o endpoint nativo decisions según la conexión congelada; solo recibe el estado del caso. La respuesta nativa se normaliza al contrato choice para puntuar."}
 
     def __init__(self, contract: ChoicePolicy, *, objective: str = "") -> None:
         self.contract = contract
@@ -251,7 +259,8 @@ class JevChoiceAdapter:
             "adapter": dict(ADAPTER),
             "evaluator": dict(EVALUATOR),
             "mutableSurface": self.surface.describe(),
-            "fixedContract": {**self.surface.fixed(), "output": OUTPUT_CONTRACT},
+            "fixedContract": {**self.surface.fixed(), "output": OUTPUT_CONTRACT,
+                              "nativeOutput": "answers[question] de tipo choice con id permitido; se normaliza a JSON choice antes de puntuar."},
         }
 
     def check_case(self, case: Mapping[str, Any]) -> str | None:
@@ -292,7 +301,7 @@ class JevChoiceAdapter:
     def run_case(self, candidate: Mapping[str, str], case: Mapping[str, Any], request: ModelRequest) -> dict[str, Any]:
         """Decide one case. The decider sees only the state; ``expected`` is used afterwards to score."""
         policy = self.decode(candidate)
-        answer = request("decider", self.decider_messages(policy, case["input"]))
+        answer = request("decider", ChoiceRequest(policy, case["input"]))
         text = answer.get("text", "")
         output = text if isinstance(text, str) else ""
         decision: str | None = None
@@ -312,7 +321,8 @@ class JevChoiceAdapter:
         return {"caseId": case["id"], "split": case["split"], "input": case["input"], "expected": expected,
                 "output": output[:MAX_OUTPUT_KEPT], "decision": decision, "score": score, "feedback": feedback,
                 "error": error, "submetrics": {"validOutput": error is None}, "latencyMs": answer.get("latencyMs"),
-                "usage": answer.get("usage"), "costUsd": answer.get("costUsd")}
+                "usage": answer.get("usage"), "costUsd": answer.get("costUsd"),
+                **({"confidence": answer.get("confidence"), "probabilities": answer.get("probabilities")} if "confidence" in answer else {})}
 
     def reflective_record(self, result: Mapping[str, Any]) -> dict[str, Any]:
         return {"caseId": result["caseId"], "input": result["input"], "expected": result["expected"],

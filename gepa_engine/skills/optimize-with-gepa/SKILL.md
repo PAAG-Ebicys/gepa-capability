@@ -109,6 +109,14 @@ evaluador consulta un juez, `judge`).
 
 ## Procedimiento
 
+Los campos y nombres técnicos de esta skill son para operar el motor. En la
+conversación habitual, explica el presupuesto, qué se está mejorando y los
+resultados en palabras de la tarea. Habla de ejemplos para buscar mejoras,
+casos para compararlas y ejemplos reservados para comprobar el resultado;
+no copies `train`/`val`/`test`, semillas ni manifiestos salvo que los solicite.
+Mantén clara la diferencia entre una mejora observada durante la búsqueda y
+una comprobación final independiente.
+
 1. **Comprobar el motor** con `gepa_setup_check` o `gepa setup check --json`.
    Resuelve con setup-gepa los hallazgos que afecten a este trabajo. Un rol
    global pendiente no bloquea si `models` indica una conexión válida para ese
@@ -124,12 +132,16 @@ evaluador consulta un juez, `judge`).
    roles globales ya asignados. Recupera las preferencias de tiempo y meta de
    validación anotadas al preparar el dataset, si las hay. Concreta
    `maxMetricCalls`, `maxProposals`, `timeLimitMinutes` y, opcionalmente,
-   `validationScoreTarget`; muestra qué significa cada límite y estima si el
+   `validationScoreTarget`; presenta los modelos, la duración y la meta
+   opcional elegidos. Resuelve tú los presupuestos internos de evaluaciones e
+   iteraciones; explica esos límites si los solicita o si pueden detener la
+   búsqueda antes de lo que espera. Estima si el
    presupuesto alcanza para validar el original, probar varias iteraciones y
    dejar tiempo para la comprobación final. Convierte un porcentaje en número de
    aciertos solo cuando la métrica principal es exactitud. Advierte si la meta
    ya la cumple el original: eso puede parar la búsqueda inmediatamente.
-   Listo cuando la persona conoce los modelos y límites efectivos del trabajo.
+   Listo cuando la persona conoce los modelos, el tiempo/meta elegidos y
+   cualquier límite que pueda cambiar materialmente esa expectativa.
 4. **Iniciar el trabajo.** Los errores de preparación llegan antes de gastar
    presupuesto como `{"error", "code"}` (en la tool, o en stdout con `--json`).
    Decide por el `code`, explícalo y corrige con la persona:
@@ -138,6 +150,7 @@ evaluador consulta un juez, `judge`).
      `adapter-missing`;
    - con `gepa adapter check`: `adapter-requirement-missing`;
    - con setup-gepa: `role-missing`, `connection-missing`, `credential-missing`,
+     `protocol-incompatible` (Jev nativo solo decide; reflexión y juez necesitan chat),
      `workspace-unavailable`;
    - en `trabajo.json` o en el original: `budget-too-small`, `invalid-policy`,
      `invalid-skill`. Listo cuando la
