@@ -45,6 +45,9 @@ def validate_connection(connection: dict) -> dict:
     provider = connection.get("provider", "local")
     if provider not in ("local", "openrouter"):
         raise ProviderError("Proveedor no compatible; elige Local u OpenRouter.")
+    protocol = connection.get("protocol", "chat")
+    if protocol not in ("chat", "decisions") or (protocol == "decisions" and provider != "openrouter"):
+        raise ProviderError("El protocolo debe ser chat, o decisions únicamente con OpenRouter.", code="protocol-incompatible")
     fields = {}
     for field in ("id", "name", "model"):
         value = connection.get(field, "")
@@ -82,7 +85,7 @@ def validate_connection(connection: dict) -> dict:
             url = urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
     except (ValueError, TypeError):
         raise ProviderError("Usa OpenRouter oficial o una URL local/LAN/Tailscale con IP explícita terminada en /v1, sin credenciales ni parámetros.") from None
-    return {**fields, "provider": provider, "url": url}
+    return {**fields, "provider": provider, "url": url, "protocol": protocol}
 
 
 class ModelGateway:
@@ -112,7 +115,8 @@ class ModelGateway:
         headers = self._headers(connection, require_key=method == "POST")
         client = self.client or httpx.Client(trust_env=False)
         try:
-            response = client.request(method, connection["url"] + route, headers=headers, json=payload, timeout=timeout, follow_redirects=False)
+            url = "https://openrouter.ai/api/alpha/decisions" if connection.get("protocol") == "decisions" and route == "decisions" else connection["url"] + route
+            response = client.request(method, url, headers=headers, json=payload, timeout=timeout, follow_redirects=False)
             if not 200 <= response.status_code < 300:
                 reason = {401: "Credencial rechazada", 403: "Acceso denegado", 402: "Saldo insuficiente", 404: "Ruta o modelo no disponible", 429: "Límite del proveedor alcanzado"}.get(response.status_code, "El proveedor rechazó la solicitud")
                 code = {401: "credential-rejected", 403: "credential-rejected", 402: "billing", 404: "not-found", 429: "rate-limit"}.get(response.status_code, "http-error")
@@ -134,6 +138,8 @@ class ModelGateway:
 
     def complete(self, connection: dict, messages: list[dict], max_tokens: int = 1024, timeout: float = 60) -> dict:
         connection = validate_connection(connection)
+        if connection["protocol"] != "chat":
+            raise ProviderError("Una conexión decisions no acepta chat, reflexión ni juez.", code="protocol-incompatible")
         if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or not 1 <= max_tokens <= 32768:
             raise ProviderError("max_tokens debe estar entre 1 y 32768.")
         if not isinstance(messages, list) or not messages or len(messages) > 200:
@@ -167,11 +173,51 @@ class ModelGateway:
         cost = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0 else None
         return {"text": content, "latencyMs": latency, "usage": usage, "costUsd": cost}
 
+    def decide(self, connection: dict, choice, timeout: float = 60) -> dict:
+        """Run the native OpenRouter choice endpoint without deriving structured data from a prompt."""
+        from .jev import ChoiceRequest
+        connection = validate_connection(connection)
+        if connection["protocol"] != "decisions" or not isinstance(choice, ChoiceRequest):
+            raise ProviderError("La decisión nativa requiere una conexión OpenRouter decisions y una pregunta choice.", code="protocol-incompatible")
+        policy = choice.policy
+        payload = {"model": connection["model"], "state": choice.state,
+                   "questions": {policy.question: {"type": "choice", "instructions": policy.instructions, "criteria": dict(policy.criteria)}}}
+        started = time.monotonic()
+        data = self._request(connection, "POST", "decisions", timeout, payload)
+        try:
+            answers = data["answers"]
+            if not isinstance(answers, dict) or set(answers) != {policy.question}:
+                raise ValueError()
+            answer = answers[policy.question]
+            if not isinstance(answer, dict) or answer.get("type") != "choice" or not isinstance(answer.get("choice"), str) or answer["choice"] not in policy.options:
+                raise ValueError()
+            def probability(value):
+                return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 1
+            confidence = answer.get("confidence")
+            if confidence is not None and not probability(confidence):
+                raise ValueError()
+            probabilities = answer.get("probabilities")
+            if probabilities is not None and (not isinstance(probabilities, dict) or set(probabilities) != set(policy.options) or not all(probability(v) for v in probabilities.values())):
+                raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            raise ProviderError("OpenRouter devolvió una decisión choice inválida para la pregunta solicitada.", code="invalid-response") from None
+        raw_usage = data.get("usage")
+        raw_usage = raw_usage if isinstance(raw_usage, dict) else {}
+        usage = {target: value if isinstance(value := raw_usage.get(source), int) and not isinstance(value, bool) and value >= 0 else None
+                 for source, target in (("input_tokens", "prompt_tokens"), ("output_tokens", "completion_tokens"))}
+        usage["total_tokens"] = sum(usage.values()) if all(value is not None for value in usage.values()) else None
+        cost = raw_usage.get("cost")
+        cost = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0 else None
+        return {"text": json.dumps({"choice": answer["choice"]}), "latencyMs": round((time.monotonic() - started) * 1000, 2),
+                "usage": usage, "costUsd": cost, "confidence": confidence, "probabilities": probabilities}
+
     def models(self, connection: dict, timeout: float = 10) -> list[dict]:
         # Catalog discovery happens before the user can select a model.
         if not isinstance(connection, dict):
             raise ProviderError("La conexión debe ser un objeto.")
         connection = validate_connection({**connection, "model": connection.get("model") or "catalog-discovery"})
+        if connection["protocol"] != "chat":
+            raise ProviderError("Los modelos decisions se verifican mediante una decisión nativa, no en el catálogo de chat.", code="protocol-incompatible")
         data = self._request(connection, "GET", "/models", timeout)
         if not isinstance(data.get("data"), list):
             raise ProviderError("El proveedor no devolvió un catálogo de modelos válido.", code="invalid-response")
@@ -249,11 +295,15 @@ class SecretStore:
                 temporary.unlink(missing_ok=True)
 
     def set(self, connection_id: str, key: str) -> None:
-        if not isinstance(connection_id, str) or not connection_id or not isinstance(key, str) or not key or len(key) > 8192 or any(ord(c) < 33 or ord(c) > 126 for c in key):
+        self.set_many([connection_id], key)
+
+    def set_many(self, connection_ids: list[str], key: str) -> None:
+        """Save a shared provider key for several connections in one atomic store update."""
+        if not isinstance(connection_ids, list) or not connection_ids or any(not isinstance(identifier, str) or not identifier for identifier in connection_ids) or not isinstance(key, str) or not key or len(key) > 8192 or any(ord(c) < 33 or ord(c) > 126 for c in key):
             raise ProviderError("La conexión o credencial no tiene un formato válido.")
         with self._lock:
             value = base64.b64encode(_dpapi(key.encode())).decode("ascii") if self.persistent else key
-            entries = {**self._entries, connection_id: value}
+            entries = {**self._entries, **dict.fromkeys(connection_ids, value)}
             self._save(entries)
             self._entries = entries
 

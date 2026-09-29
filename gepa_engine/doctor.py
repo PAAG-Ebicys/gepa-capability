@@ -22,6 +22,7 @@ from typing import Any, Callable, Mapping
 from .config import ENGINE_PACKAGE, ENGINE_VERSION, ROLES, Connection, Settings, credential_lookup, has_credential, open_secret_store, resolved_folders
 from .files import open_new
 from .providers import ModelGateway, ProviderError
+from .jev import ChoiceRequest, parse_policy
 
 BASE_PYTHON_DEPENDENCIES = ({"name": "httpx", "purpose": "hablar con los proveedores de modelos"},)
 SMOKE_MESSAGES = [{"role": "user", "content": "Responde únicamente con la palabra: listo"}]
@@ -58,6 +59,14 @@ def _installed_version(package: str) -> str | None:
         return None
 
 
+def _smoke_inference(gateway: ModelGateway, connection: Connection) -> dict[str, Any]:
+    if connection.protocol == "decisions":
+        policy = parse_policy({"question": "setup_check", "instructions": "Elige listo si el estado indica que está listo.",
+                               "criteria": {"listo": "El estado indica listo.", "otro": "Cualquier otro estado."}})
+        return gateway.decide(connection.as_provider_dict(), ChoiceRequest(policy, "listo"), timeout=SMOKE_TIMEOUT_SECONDS)
+    return gateway.complete(connection.as_provider_dict(), SMOKE_MESSAGES, max_tokens=SMOKE_MAX_TOKENS, timeout=SMOKE_TIMEOUT_SECONDS)
+
+
 def real_probes(settings: Settings, environ: Mapping[str, str] | None = None) -> Probes:
     environ = os.environ if environ is None else environ
     secrets = open_secret_store(settings)
@@ -67,7 +76,7 @@ def real_probes(settings: Settings, environ: Mapping[str, str] | None = None) ->
         python_module=lambda name: importlib.util.find_spec(name) is not None,
         command_path=shutil.which,
         catalog=lambda connection: gateway.models(connection.as_provider_dict()),
-        complete=lambda connection: gateway.complete(connection.as_provider_dict(), SMOKE_MESSAGES, max_tokens=SMOKE_MAX_TOKENS, timeout=SMOKE_TIMEOUT_SECONDS),
+        complete=lambda connection: _smoke_inference(gateway, connection),
         has_credential=lambda connection: has_credential(connection, secrets, environ),
         encrypted_store=lambda: secrets.persistent,
     )
@@ -133,7 +142,7 @@ def _credential_step(connection: Connection, encrypted_store: bool) -> str:
     declare = f"Define la variable de entorno {variable} con la API key (y declárala con --api-key-env {variable} si aún no lo está)"
     if not encrypted_store:
         return f"{declare}; en este sistema no hay almacén cifrado de claves, así que la variable es la única vía."
-    return f"{declare}, o guárdala cifrada con: gepa setup connection set-key {connection.id}."
+    return f"El agente puede abrir un campo oculto con pegado Ctrl+V ejecutando: gepa setup connection set-key {connection.id} --ui. También puedes usar una variable de entorno: {declare}."
 
 
 def _provider_failure(connection: Connection, error: ProviderError, *, stage: str, encrypted_store: bool) -> Finding:
@@ -145,6 +154,8 @@ def _provider_failure(connection: Connection, error: ProviderError, *, stage: st
         return Finding(component, "error", "credential-rejected", f"El proveedor de '{connection.id}' rechazó la credencial al {stage}: {error}", _credential_step(connection, encrypted_store))
     if code == "credential-missing":
         return Finding(component, "error", "credential-missing", f"La conexión '{connection.id}' necesita una credencial: {error}", _credential_step(connection, encrypted_store))
+    if connection.protocol == "decisions":
+        return Finding(component, "error", code, f"La decisión nativa de '{connection.id}' falló: {error}", "Comprueba el identificador del modelo JEV y el acceso a https://openrouter.ai/api/alpha/decisions; repite 'gepa setup check'.")
     if stage == "generar una respuesta":
         return Finding(component, "error", "inference-failed", f"El modelo '{connection.model}' de '{connection.id}' aparece en el catálogo pero no generó una respuesta: {error}", f"Comprueba que el modelo esté cargado y acepte chat/completions en {connection.url}; revisa los registros del servidor y repite 'gepa setup check'.")
     return Finding(component, "error", "provider-error", f"El proveedor de '{connection.id}' devolvió un error al {stage}: {error}", f"Revisa el servidor en {connection.url} y sus registros; repite 'gepa setup check' cuando responda.")
@@ -156,6 +167,14 @@ def _check_connection(connection: Connection, probes: Probes, *, run_inference: 
     if needs_key and not probes.has_credential(connection):
         return Finding(component, "error", "credential-missing", f"La conexión '{connection.id}' ({connection.provider}) no tiene credencial configurada.",
                        _credential_step(connection, probes.encrypted_store()))
+    if connection.protocol == "decisions":
+        if not run_inference:
+            return Finding(component, "warning", "connection-not-tested", f"Conexión '{connection.id}': decisions configurada sin rol asignado; no se gastó presupuesto en probarla.", "Asigna el ejecutor y repite 'gepa setup check' para verificar una decisión nativa.")
+        try:
+            result = probes.complete(connection)
+        except ProviderError as error:
+            return _provider_failure(connection, error, stage="generar una decisión nativa", encrypted_store=probes.encrypted_store())
+        return Finding(component, "ok", "connection-ok", f"Conexión '{connection.id}': modelo '{connection.model}' verificado mediante una decisión nativa autenticada en OpenRouter ({result.get('latencyMs')} ms).")
     try:
         models = probes.catalog(connection)
     except ProviderError as error:
@@ -184,7 +203,10 @@ def _check_roles(settings: Settings) -> list[Finding]:
         elif settings.connection(target) is None:
             findings.append(Finding(f"role:{role}", "error", "role-dangling", f"El rol '{role}' apunta a la conexión '{target}', que no existe.", f"Asigna una conexión existente con: gepa setup role {role} <id-de-conexión>."))
         else:
-            findings.append(Finding(f"role:{role}", "ok", "role-ok", f"Rol '{role}' usa la conexión '{target}'."))
+            if role != "executor" and settings.connection(target).protocol == "decisions":
+                findings.append(Finding(f"role:{role}", "error", "protocol-incompatible", f"El rol '{role}' requiere chat; '{target}' usa decisions.", "Elige una conexión chat para este rol."))
+            else:
+                findings.append(Finding(f"role:{role}", "ok", "role-ok", f"Rol '{role}' usa la conexión '{target}'."))
     return findings
 
 
@@ -194,7 +216,8 @@ def run_doctor(settings: Settings, probes: Probes) -> dict[str, Any]:
     findings += _check_dependencies(settings, probes)
     findings += _check_data_dir(settings)
     findings += _check_folders(settings)
-    assigned = set(settings.roles.values())
+    assigned = {identifier for role, identifier in settings.roles.items()
+                if settings.connection(identifier) is not None and (role == "executor" or settings.connection(identifier).protocol == "chat")}
     if settings.connections:
         findings += [_check_connection(c, probes, run_inference=c.id in assigned) for c in settings.connections]
     else:

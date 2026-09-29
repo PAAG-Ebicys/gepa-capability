@@ -47,6 +47,8 @@ Durante la preparación se pueden anotar preferencias de presupuesto o de meta d
 
 `models` elige **IDs de conexiones ya configuradas**, no nombres de modelos. Puede omitirse para usar los roles por defecto. Una Skill usa `models.executor`; `models.judge` se usa si el evaluador aprobado necesita juez. Un adaptador propio declara los roles necesarios para esa tarea. El manifiesto del trabajo congela qué conexiones, modelos y límites se usaron.
 
+Si el decisor es Jev de TypeSafe en OpenRouter, su conexión usa el protocolo `decisions`; el motor envía la política choice a la API nativa y conserva la decisión y sus probabilidades. Ese modelo no genera las propuestas de GEPA: la reflexión usa una conexión de chat distinta. Los modelos concretos los eliges tú; el agente configura el protocolo correspondiente.
+
 La búsqueda se puede entender como esta secuencia:
 
 ```text

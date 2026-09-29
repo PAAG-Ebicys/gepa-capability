@@ -31,6 +31,7 @@ from .config import (ConfigError, Settings, credential_lookup, default_home, has
 from .encoding import storable
 from .errors import ContractError, JobError, Stop
 from .evaluation import JUDGE_ROLE, JudgeError
+from .jev import ChoiceRequest, JevChoiceAdapter
 from .providers import ModelGateway, ProviderError
 from .review import ROLE_NAMES, ReviewError, build as build_review, stored_artifact
 from .storage import Storage
@@ -67,6 +68,7 @@ Launcher = Callable[[str], None]
 
 class Gateway(Protocol):
     def complete(self, connection: dict, messages: list[dict], max_tokens: int = ..., timeout: float = ...) -> dict: ...
+    def decide(self, connection: dict, choice: ChoiceRequest, timeout: float = ...) -> dict: ...
 
 
 class _SilentLogger:
@@ -322,11 +324,11 @@ class JobService:
             raise JobError("Este borrador se evalúa sin juez: 'judge' solo se indica con un evaluador que lo consulta (rubric-judge, o un adaptador que declara el rol judge).",
                            "invalid-models")
         overrides = {key: value for key, value in ((role, decider), (JUDGE_ROLE, judge)) if value is not None}
-        models = self._models(overrides, roles=case_roles)
+        models = self._models(overrides, roles=case_roles, native_choice=isinstance(adapter, JevChoiceAdapter))
         request = self._requester({"models": models})
         meter = _Meter()
 
-        def metered(role: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> Mapping[str, Any]:
+        def metered(role: str, messages: list[dict[str, str]] | ChoiceRequest, max_tokens: int | None = None) -> Mapping[str, Any]:
             meter.calls += 1
             try:
                 return meter.add(request(role, messages, max_tokens=max_tokens or adapter.preview_max_tokens, timeout=PREVIEW_TIMEOUT_SECONDS))
@@ -423,7 +425,7 @@ class JobService:
                 raise JobError(str(error), "invalid-dataset") from None
         splits = datasets.partitions(record["cases"])
         counts = {split: len(members) for split, members in splits.items()}
-        models = self._models(spec.get("models"), roles=adapter.roles)
+        models = self._models(spec.get("models"), roles=adapter.roles, native_choice=isinstance(adapter, JevChoiceAdapter))
         limits = self._limits(spec.get("limits"), counts, adapter)
         _verified(adapter)
         manifest = {
@@ -922,7 +924,7 @@ class JobService:
         document, source = kind.load(raw, base_dir)
         return kind, document, source
 
-    def _models(self, raw: Any, roles: Mapping[str, str]) -> dict[str, Any]:
+    def _models(self, raw: Any, roles: Mapping[str, str], *, native_choice: bool = False) -> dict[str, Any]:
         raw = {} if raw is None else raw
         if not isinstance(raw, dict) or set(raw) - set(roles) or not all(isinstance(value, str) for value in raw.values()):
             raise JobError(f"'models' admite {' y '.join(repr(role) for role in roles)} con el id de una conexión.", "invalid-models")
@@ -935,10 +937,12 @@ class JobService:
             connection = self.settings.connection(identifier)
             if connection is None:
                 raise JobError(f"No existe la conexión '{identifier}'; revisa 'gepa setup show'.", "connection-missing")
+            if connection.protocol == "decisions" and not (native_choice and role == "decider"):
+                raise JobError(f"La conexión '{identifier}' usa decisions: solo sirve como decisor JEV choice integrado; reflexión, juez y otros adaptadores requieren chat.", "protocol-incompatible")
             if (connection.provider == "openrouter" or connection.api_key_env) and not has_credential(connection, secrets, self.environ):
                 raise JobError(f"La conexión '{identifier}' no tiene credencial; configúrala antes de gastar presupuesto.", "credential-missing")
             frozen[role] = {"connection": connection.id, "name": connection.name, "provider": connection.provider, "url": connection.url,
-                            "model": connection.model, "apiKeyEnv": connection.api_key_env, "settingsRole": settings_role, "sampling": SAMPLING_NOTE}
+                            "model": connection.model, "protocol": connection.protocol, "apiKeyEnv": connection.api_key_env, "settingsRole": settings_role, "sampling": SAMPLING_NOTE}
         return frozen
 
     def _limits(self, raw: Any, counts: Mapping[str, int], adapter: Adapter) -> dict[str, Any]:
@@ -966,7 +970,7 @@ class JobService:
 
     def _requester(self, manifest: Mapping[str, Any]) -> Callable[..., dict[str, Any]]:
         """Model calls always use the connections frozen in the manifest, never today's settings."""
-        frozen = {role: make_connection(identifier=m["connection"], provider=m["provider"], model=m["model"], url=m["url"], name=m["name"], api_key_env=m["apiKeyEnv"])
+        frozen = {role: make_connection(identifier=m["connection"], provider=m["provider"], model=m["model"], url=m["url"], name=m["name"], api_key_env=m["apiKeyEnv"], protocol=m.get("protocol", "chat"))
                   for role, m in manifest["models"].items()}
         connections = {role: connection.as_provider_dict() for role, connection in frozen.items()}
         gateway = self.gateway
@@ -974,7 +978,11 @@ class JobService:
             snapshot = replace(self.settings, connections=tuple({connection.id: connection for connection in frozen.values()}.values()))
             gateway = ModelGateway(api_keys=credential_lookup(snapshot, open_secret_store(self.settings), self.environ))
 
-        def request(role: str, messages: list[dict[str, str]], *, max_tokens: int, timeout: float) -> dict[str, Any]:
+        def request(role: str, messages: list[dict[str, str]] | ChoiceRequest, *, max_tokens: int, timeout: float) -> dict[str, Any]:
+            if isinstance(messages, ChoiceRequest):
+                if connections[role]["protocol"] == "decisions":
+                    return gateway.decide(connections[role], messages, timeout=timeout)
+                messages = JevChoiceAdapter(messages.policy).decider_messages(messages.policy, messages.state)
             return gateway.complete(connections[role], messages, max_tokens=max_tokens, timeout=timeout)
 
         return request
@@ -1229,7 +1237,7 @@ class _Run:
         if time.monotonic() >= self.deadline:
             raise Stop("time_limit")
 
-    def call(self, role: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> dict[str, Any]:
+    def call(self, role: str, messages: list[dict[str, str]] | ChoiceRequest, max_tokens: int | None = None) -> dict[str, Any]:
         """One model call under the frozen limits; an adapter whose output limit is sealed with its approval passes ``max_tokens``."""
         self.check()
         meter = self.meter
@@ -1588,7 +1596,7 @@ class _Requests:
     def __init__(self, run: _Run) -> None:
         self.run = run
 
-    def __call__(self, role: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> dict[str, Any]:
+    def __call__(self, role: str, messages: list[dict[str, str]] | ChoiceRequest, max_tokens: int | None = None) -> dict[str, Any]:
         return self.run.call(role, messages, max_tokens)
 
     def time_left(self) -> float:

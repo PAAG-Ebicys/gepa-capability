@@ -36,6 +36,7 @@ from .config import (
     without_connection,
 )
 from .datasets import provenance_text
+from .credential_ui import capture_credential
 from .declaration import DEFAULT_EXAMPLE, examples
 from .doctor import Probes, real_probes, render_report, run_doctor
 from .encoding import utf8
@@ -95,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     add = connection_commands.add_parser("add", help="Añadir o reemplazar una conexión.")
     add.add_argument("--id", required=True)
     add.add_argument("--provider", required=True, choices=("local", "openrouter"))
+    add.add_argument("--protocol", default="chat", choices=("chat", "decisions"), help="decisions para JEV choice nativo de OpenRouter; chat para los demás roles.")
     add.add_argument("--model", required=True)
     add.add_argument("--url", default="", help="URL base terminada en /v1 (obligatoria para local).")
     add.add_argument("--name", default="")
@@ -104,6 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
     remove.add_argument("connection_id")
     set_key = connection_commands.add_parser("set-key", help="Guardar la API key cifrada (se lee de la entrada estándar, nunca de los argumentos).")
     set_key.add_argument("connection_id")
+    set_key.add_argument("--also", action="append", default=[], metavar="ID", help="Guardar la misma clave para otra conexión del mismo proveedor; repetible.")
+    set_key.add_argument("--ui", action="store_true", help="Abrir un campo oculto con pegado Ctrl+V en el escritorio del usuario (Windows).")
 
     dependency = setup_commands.add_parser("dependency", help="Declarar dependencias de ejecución que el diagnóstico debe comprobar.")
     dependency_commands = dependency.add_subparsers(dest="dependency_command", metavar="acción")
@@ -823,7 +827,7 @@ def _dispatch(args: argparse.Namespace, home: Path, stdout: TextIO, stderr: Text
     if action == "connection":
         sub = args.connection_command
         if sub == "add":
-            connection = make_connection(identifier=args.id, provider=args.provider, model=args.model, url=args.url, name=args.name, api_key_env=args.api_key_env)
+            connection = make_connection(identifier=args.id, provider=args.provider, model=args.model, url=args.url, name=args.name, api_key_env=args.api_key_env, protocol=args.protocol)
             settings = with_connection(settings, connection)
             save_settings(settings)
             stdout.write(f"Conexión {connection.id} guardada: {connection.provider} {connection.model} @ {connection.url}\n")
@@ -835,16 +839,31 @@ def _dispatch(args: argparse.Namespace, home: Path, stdout: TextIO, stderr: Text
             stdout.write(f"Conexión {args.connection_id} eliminada.\n")
             return 0
         if sub == "set-key":
-            if settings.connection(args.connection_id) is None:
+            connection = settings.connection(args.connection_id)
+            if connection is None:
                 raise ConfigError(f"No existe la conexión '{args.connection_id}'.")
+            targets = [connection]
+            for identifier in args.also:
+                other = settings.connection(identifier)
+                if other is None or other.provider != connection.provider:
+                    raise ConfigError("Todas las conexiones de --also deben existir y usar el mismo proveedor.")
+                if other not in targets:
+                    targets.append(other)
+            store = open_secret_store(settings)
+            if not store.persistent:
+                raise ConfigError("En este sistema el almacén cifrado no persiste; configura una variable de entorno con --api-key-env antes de aportar la credencial.")
+            if args.ui:
+                def save_for_targets(key):
+                    store.set_many([target.id for target in targets], key)
+                if not capture_credential(connection, save_for_targets):
+                    stdout.write("Captura de credencial cancelada; no se guardó ninguna clave.\n")
+                    return 1
+                stdout.write(f"Credencial de {args.connection_id} guardada cifrada para el usuario actual.\n")
+                return 0
             key = (stdin.readline() if not stdin.isatty() else getpass.getpass("API key (no se mostrará): ", stream=stderr)).strip()
             if not key:
                 raise ConfigError("No se recibió ninguna API key.")
-            store = open_secret_store(settings)
-            store.set(args.connection_id, key)
-            if not store.persistent:
-                stderr.write("Aviso: en este sistema el almacén cifrado no persiste; usa --api-key-env con una variable de entorno.\n")
-                return 2
+            store.set_many([target.id for target in targets], key)
             stdout.write(f"Credencial de {args.connection_id} guardada cifrada para el usuario actual.\n")
             return 0
         view = public_view(settings, open_secret_store(settings))

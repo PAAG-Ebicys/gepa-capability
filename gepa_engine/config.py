@@ -38,9 +38,10 @@ class Connection:
     url: str
     model: str
     api_key_env: str | None = None
+    protocol: str = "chat"
 
     def as_provider_dict(self) -> dict[str, str]:
-        return {"id": self.id, "name": self.name, "provider": self.provider, "url": self.url, "model": self.model}
+        return {"id": self.id, "name": self.name, "provider": self.provider, "url": self.url, "model": self.model, "protocol": self.protocol}
 
 
 @dataclass(frozen=True)
@@ -119,21 +120,22 @@ def _connection_from(document: Mapping[str, Any]) -> Connection:
         url=_string(document, "url", required=False),
         name=_string(document, "name", required=False),
         api_key_env=env or None,
+        protocol=document.get("protocol", "chat"),
     )
 
 
-def make_connection(*, identifier: str, provider: str, model: str, url: str = "", name: str = "", api_key_env: str | None = None) -> Connection:
+def make_connection(*, identifier: str, provider: str, model: str, url: str = "", name: str = "", api_key_env: str | None = None, protocol: str = "chat") -> Connection:
     """Validate through the same rules the gateway applies, so setup rejects what inference would reject."""
     if not identifier or any(ch in identifier for ch in " /\\\t\n") or len(identifier) > 100:
         raise ConfigError("El identificador de la conexión debe ser una palabra corta sin espacios ni barras.")
     if api_key_env is not None and (not api_key_env.isidentifier() or api_key_env != api_key_env.upper()):
         raise ConfigError("El nombre de la variable de entorno debe ser un identificador en mayúsculas, como OPENROUTER_API_KEY.")
-    raw = {"id": identifier, "name": name, "provider": provider, "model": model, "url": url or (OPENROUTER_URL if provider == "openrouter" else "")}
+    raw = {"id": identifier, "name": name, "provider": provider, "model": model, "url": url or (OPENROUTER_URL if provider == "openrouter" else ""), "protocol": protocol}
     try:
         clean = validate_connection(raw)
     except ProviderError as error:
         raise ConfigError(str(error)) from None
-    return Connection(id=clean["id"], name=clean["name"], provider=clean["provider"], url=clean["url"], model=clean["model"], api_key_env=api_key_env)
+    return Connection(id=clean["id"], name=clean["name"], provider=clean["provider"], url=clean["url"], model=clean["model"], api_key_env=api_key_env, protocol=clean["protocol"])
 
 
 def make_dependency(*, kind: str, name: str, purpose: str = "") -> Dependency:
@@ -182,7 +184,7 @@ def to_document(settings: Settings) -> dict[str, Any]:
         "format": CONFIG_FORMAT,
         "dataDir": str(settings.data_dir),
         "connections": [
-            {"id": c.id, "name": c.name, "provider": c.provider, "url": c.url, "model": c.model, **({"apiKeyEnv": c.api_key_env} if c.api_key_env else {})}
+            {"id": c.id, "name": c.name, "provider": c.provider, "url": c.url, "model": c.model, "protocol": c.protocol, **({"apiKeyEnv": c.api_key_env} if c.api_key_env else {})}
             for c in settings.connections
         ],
         "roles": dict(settings.roles),
@@ -303,7 +305,7 @@ def public_view(settings: Settings, secrets: SecretStore | None, environ: Mappin
         "dataDir": str(settings.data_dir),
         "engine": {"package": ENGINE_PACKAGE, "version": ENGINE_VERSION},
         "connections": [
-            {"id": c.id, "name": c.name, "provider": c.provider, "url": c.url, "model": c.model, "apiKeyEnv": c.api_key_env, "hasKey": has_credential(c, secrets, environ)}
+            {"id": c.id, "name": c.name, "provider": c.provider, "url": c.url, "model": c.model, "protocol": c.protocol, "apiKeyEnv": c.api_key_env, "hasKey": has_credential(c, secrets, environ)}
             for c in settings.connections
         ],
         "roles": {role: settings.roles.get(role) for role in ROLES},

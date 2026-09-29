@@ -45,6 +45,12 @@ Sustituye `<ruta-del-venv>` por una ruta real: no es texto para copiar literalme
 
 ## 2. Instalar las skills en un proyecto
 
+Si ya instalaste el motor desde la rama `main` con uv, actualízalo antes de
+copiar las skills nuevas: `uv tool upgrade gepa-capability --reinstall`.
+Si usaste una versión fijada, actualiza desde la revisión que quieras usar.
+Después vuelve a ejecutar `setup install` con el mismo anfitrión y ámbito.
+Con un venv, actualiza el paquete mediante pip en ese mismo intérprete.
+
 Abre una terminal en la **raíz del proyecto**. Ejecuta el `gepa` recién instalado:
 
 ```bash
@@ -87,7 +93,11 @@ Para OpenRouter, guarda la clave en una variable de entorno, nunca en un argumen
 gepa setup connection add --id remoto --provider openrouter --model "<org/modelo>" --api-key-env OPENROUTER_API_KEY
 ```
 
-El entorno del proceso que ejecute GEPA debe tener esa variable. En Windows también existe `gepa setup connection set-key remoto`, que pide la clave por stdin y la guarda cifrada para ese usuario; en macOS y Linux usa la variable de entorno. Al preparar una tarea que emplea un adaptador propio, `gepa adapter check` comprueba sus dependencias.
+El entorno del proceso que ejecute GEPA debe tener esa variable. En Windows, el recorrido de setup-gepa usa `gepa setup connection set-key remoto --ui`: el agente abre una ventana con un campo oculto donde puedes pegar la clave y pulsar Guardar, sin abrir PowerShell ni pasar la clave por el chat. Necesita una sesión de escritorio y Python con Tcl/Tk. La clave se guarda cifrada para ese usuario. El comando sin `--ui` conserva la entrada por stdin para quien prefiera terminal. En macOS y Linux usa la variable de entorno; el almacén actual no conserva la clave entre procesos. Al preparar una tarea que emplea un adaptador propio, `gepa adapter check` comprueba sus dependencias.
+
+Setup-gepa reúne las decisiones pendientes de proveedor, modelo y carpetas en una sola pregunta y ejecuta los pasos técnicos por ti. Puedes aplazar los modelos; no se fijan de antemano. La compatibilidad del formato de una implementación JEV externa se comprueba al preparar el experimento: no forma parte de la instalación del proveedor OpenRouter.
+
+Para Jev de TypeSafe en OpenRouter, la conexión usa `--protocol decisions` y solo ejecuta las decisiones choice. La reflexión necesita otro modelo de chat; el agente configura ambas interfaces según los modelos elegidos. Si ambas conexiones usan la misma clave OpenRouter, `set-key <decisor> --also <reflexión> --ui` permite guardarla con una sola captura. La API de chat y la API de decisiones tienen contratos distintos; [OpenRouter documenta la interfaz de Jev](https://openrouter.ai/docs/guides/community/jev).
 
 ## Ubicación de datos
 

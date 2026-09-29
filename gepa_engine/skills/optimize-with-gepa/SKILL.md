@@ -138,6 +138,7 @@ evaluador consulta un juez, `judge`).
      `adapter-missing`;
    - con `gepa adapter check`: `adapter-requirement-missing`;
    - con setup-gepa: `role-missing`, `connection-missing`, `credential-missing`,
+     `protocol-incompatible` (Jev nativo solo decide; reflexión y juez necesitan chat),
      `workspace-unavailable`;
    - en `trabajo.json` o en el original: `budget-too-small`, `invalid-policy`,
      `invalid-skill`. Listo cuando la

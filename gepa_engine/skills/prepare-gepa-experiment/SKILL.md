@@ -42,6 +42,12 @@ incluidos no hacen (ejecutar código, un navegador, una API, otro sandbox u otro
 evaluador), lee [new-adapter.md](new-adapter.md) antes del paso 3: con la
 persona se prepara y comprueba un adaptador propio.
 
+**Formato JEV:** antes de tratar un artefacto como política integrada, lee
+[jev-formats.md](jev-formats.md) y comprueba su esquema y contrato de salida.
+Un JEV externo puede usar otro formato. Elegir OpenRouter no convierte ese
+formato al del motor; identifica y comprueba la compatibilidad tú, reutilizando
+las conexiones de setup-gepa.
+
 **Plantilla:** si en el paso 2 la persona elige una plantilla, lee
 [templates.md](templates.md) antes del paso 3. Una plantilla es una carpeta del
 proyecto que da el adaptador, el ejecutor, el evaluador y la presentación; los
